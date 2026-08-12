@@ -1,0 +1,602 @@
+WhatsApp AI Ops Agent — Hackathon Architecture Plan
+Project codename: FieldBot
+Target: 2–3 minute demo video for hackathon submission
+Build window: 4 days
+Core premise: An AI agent that lives in WhatsApp and autonomously runs two high-value solar operations workflows — site progress inspection and material procurement — end to end, without the operator ever opening a browser.
+
+1. End Goal
+The finished product demonstrates two sequential acts in a single continuous demo:
+
+Act 1 — Site Inspection to Invoice (0:25–1:30)
+A site supervisor sends 3 rooftop photos to a WhatsApp number. The AI agent analyzes the photos using a vision LLM, counts installed panels, flags any visible issues, calculates percentage completion, and automatically creates both a structured inspection report and a progress claim invoice draft — all within 90 seconds. The portal dashboard reflects these new records in real time.
+
+Act 2 — Procurement Request to PO (1:30–2:45)
+The project manager sends a natural language WhatsApp message requesting materials. The agent parses the request, queries approved vendors filtered by region, simulates an RFQ dispatch, generates a realistic quote after a short delay, presents the quote for one-word approval, and on confirmation creates a Purchase Order in the portal. Total elapsed time: under 4 minutes.
+
+The demo video format: a BEFORE segment showing manual chaos (WhatsApp message threads, spreadsheets, 3-day delays), then the live agent demo, then a side-by-side closing with hard numbers.
+
+2. System Architecture
+
+┌─────────────────────────────────────────────────────────┐
+│                     DEMO PHONE                          │
+│   Supervisor sends photos → WhatsApp                    │
+│   PM sends text → WhatsApp                              │
+└──────────────────────┬──────────────────────────────────┘
+                       │ Twilio WhatsApp Sandbox
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│                  BACKEND (FastAPI)                       │
+│                                                         │
+│  POST /webhook/whatsapp                                 │
+│       │                                                 │
+│       ▼                                                 │
+│  Intent Router ──► Image detected → Inspection Agent   │
+│                └─► Procurement text → Procurement Agent │
+│                └─► "YES"/"NO" → Confirmation Handler   │
+│                                                         │
+│  Inspection Agent:                                      │
+│    Download images → Vision LLM → Parse results →      │
+│    Create inspection report → Create invoice draft →   │
+│    Reply to WhatsApp                                    │
+│                                                         │
+│  Procurement Agent:                                     │
+│    Extract intent (LLM) → Query vendors → Generate     │
+│    RFQ → Simulate quote (LLM) → Present to user →      │
+│    Await YES → Create PO → Reply                       │
+│                                                         │
+│  SSE /events → streams new record events               │
+└──────────┬──────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────┐
+│              POSTGRESQL DATABASE                        │
+│  projects │ vendors │ inspection_reports │              │
+│  invoice_drafts │ purchase_orders │                    │
+│  conversation_sessions │ activity_log                  │
+└─────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────┐
+│              FRONTEND (React + Vite)                    │
+│  Dashboard with real-time activity feed (SSE)          │
+│  Project detail → inspections, invoices, POs tabs      │
+│  Portal links from WhatsApp messages resolve here      │
+└─────────────────────────────────────────────────────────┘
+3. Tech Stack
+Layer	Choice	Reason
+Backend	Python, FastAPI	Fast to write, async-native, SSE built-in
+Database	PostgreSQL	Via Supabase free tier for zero-ops setup
+ORM	SQLAlchemy 2.0 (async) or Tortoise ORM	Developer preference
+Frontend	React + Vite + TypeScript	Fast dev server, easy deploy
+Styling	Tailwind CSS	Rapid UI
+Real-time	Server-Sent Events (SSE)	Simpler than WebSockets for one-way push
+WhatsApp	Twilio WhatsApp Sandbox	Free, no business approval required
+LLM	[LLM_PROVIDER] — to be decided by developer	Two usages: vision (photo analysis) + text (intent extraction, quote generation)
+Backend hosting	Railway or Render (free tier)	Needs a public HTTPS URL for Twilio webhook
+Frontend hosting	Vercel	Free, instant deploys
+Image storage	Cloudinary free tier or keep Twilio media URLs	Inspection report photos need a permanent URL
+4. Database Schema
+projects
+
+id              SERIAL PRIMARY KEY
+name            TEXT NOT NULL               -- e.g. "Greenfield Industrial Phase 1"
+client_name     TEXT NOT NULL               -- e.g. "Greenfield Manufacturing Sdn Bhd"
+site_location   TEXT NOT NULL               -- e.g. "Penang"
+region          TEXT NOT NULL               -- e.g. "north", "central", "south"
+phase           TEXT                        -- e.g. "Phase 1"
+total_panels    INTEGER NOT NULL            -- planned installation count
+contract_value  NUMERIC(12,2) NOT NULL      -- in MYR
+status          TEXT DEFAULT 'active'
+created_at      TIMESTAMPTZ DEFAULT now()
+vendors
+
+id              SERIAL PRIMARY KEY
+company_name    TEXT NOT NULL
+region          TEXT NOT NULL               -- matches projects.region
+contact_email   TEXT NOT NULL
+on_time_rate    NUMERIC(5,2)                -- percentage, e.g. 94.0
+unit_price_myr  NUMERIC(10,2)              -- price per solar panel unit
+specialization  TEXT                        -- e.g. "solar panels", "inverters"
+is_active       BOOLEAN DEFAULT TRUE
+created_at      TIMESTAMPTZ DEFAULT now()
+inspection_reports
+
+id                  SERIAL PRIMARY KEY
+project_id          INTEGER FK projects.id
+submitted_by_phone  TEXT                    -- WhatsApp number that sent photos
+photo_urls          JSONB                   -- array of image URL strings
+panels_detected     INTEGER
+panels_with_issues  INTEGER DEFAULT 0
+issues              JSONB                   -- array of {description, severity}
+completion_pct      NUMERIC(5,2)           -- 0.00 to 100.00
+ai_analysis_raw     JSONB                   -- full LLM response stored verbatim
+created_at          TIMESTAMPTZ DEFAULT now()
+invoice_drafts
+
+id                  SERIAL PRIMARY KEY
+project_id          INTEGER FK projects.id
+inspection_report_id INTEGER FK inspection_reports.id
+invoice_number      TEXT NOT NULL           -- e.g. "PC-2026-001"
+claim_percentage    NUMERIC(5,2)
+claim_amount_myr    NUMERIC(12,2)
+status              TEXT DEFAULT 'draft'    -- draft | pending | approved
+created_at          TIMESTAMPTZ DEFAULT now()
+purchase_orders
+
+id              SERIAL PRIMARY KEY
+project_id      INTEGER FK projects.id
+vendor_id       INTEGER FK vendors.id
+po_number       TEXT NOT NULL               -- e.g. "PO-2026-001"
+item_description TEXT NOT NULL
+quantity        INTEGER NOT NULL
+unit_price_myr  NUMERIC(10,2)
+total_price_myr NUMERIC(12,2)
+status          TEXT DEFAULT 'draft'        -- draft | sent | confirmed
+created_at      TIMESTAMPTZ DEFAULT now()
+conversation_sessions
+
+id              SERIAL PRIMARY KEY
+phone_number    TEXT UNIQUE NOT NULL
+state           TEXT DEFAULT 'idle'
+                -- idle | awaiting_project_selection
+                -- | awaiting_procurement_confirm
+context         JSONB DEFAULT '{}'          -- stores pending PO details mid-conversation
+updated_at      TIMESTAMPTZ DEFAULT now()
+activity_log
+
+id              SERIAL PRIMARY KEY
+event_type      TEXT NOT NULL               -- e.g. "inspection_created", "po_created"
+description     TEXT NOT NULL               -- human-readable for the live feed
+entity_type     TEXT                        -- "inspection_report", "invoice_draft", "purchase_order"
+entity_id       INTEGER
+created_at      TIMESTAMPTZ DEFAULT now()
+5. Backend API Specification
+WhatsApp Webhook
+
+POST /webhook/whatsapp
+Receives Twilio's POST payload. Twilio sends From (phone number), Body (message text), and MediaUrl0/MediaContentType0 for any attached media. This is the single entry point for all agent logic. Returns TwiML <Response> (can be empty; replies are sent via Twilio REST API, not TwiML response).
+
+Projects
+
+GET  /projects              → list all projects
+GET  /projects/{id}         → single project with related counts
+Inspection Reports
+
+GET  /inspections                   → list all, newest first
+GET  /inspections/{id}              → single report with photo URLs + issues
+POST /inspections                   → internal — called by agent only
+     Body: project_id, photo_urls, panels_detected, panels_with_issues,
+           issues, completion_pct, ai_analysis_raw, submitted_by_phone
+Invoice Drafts
+
+GET  /invoices                      → list all
+POST /invoices                      → internal — called by agent only
+     Body: project_id, inspection_report_id, invoice_number,
+           claim_percentage, claim_amount_myr
+Purchase Orders
+
+GET  /purchase-orders               → list all
+POST /purchase-orders               → internal — called by agent only
+     Body: project_id, vendor_id, po_number, item_description,
+           quantity, unit_price_myr, total_price_myr
+Vendors
+
+GET  /vendors?region={region}       → list vendors, optionally filtered by region
+Real-time Events (SSE)
+
+GET  /events
+Streams text/event-stream. Every time a new activity_log record is inserted (by any agent action), this endpoint broadcasts a JSON event to all connected frontend clients. Frontend subscribes on mount, updates the activity feed and dashboard counters without a page reload.
+
+Event format:
+
+
+{
+  "event_type": "inspection_created",
+  "description": "AI inspection report created for Greenfield Phase 1",
+  "entity_type": "inspection_report",
+  "entity_id": 12,
+  "timestamp": "2026-06-18T09:41:22Z"
+}
+6. Agent Design
+6a. Intent Router
+Every incoming WhatsApp message first passes through the intent router before any LLM call:
+
+
+if message has image attachments:
+    → dispatch to INSPECTION AGENT
+
+elif active session state == "awaiting_procurement_confirm":
+    if message body is "yes" / "approve" / "ok" (case-insensitive):
+        → dispatch to CONFIRMATION HANDLER
+    elif message body is "no" / "cancel":
+        → cancel session, reply "OK, cancelled."
+    else:
+        → reply "Please reply YES to confirm or NO to cancel."
+
+elif message body contains procurement keywords
+    (need, order, buy, procure, panels, materials, urgent, units, short):
+    → dispatch to PROCUREMENT AGENT
+
+else:
+    → reply with a generic help message
+No LLM call for the routing decision. Pure keyword + session state logic. Keeps routing fast and deterministic.
+
+6b. Inspection Agent
+Trigger: One or more image attachments received.
+
+Step 1 — Download images
+Twilio provides MediaUrl0, MediaUrl1, etc. with HTTP basic auth. Download each image using Twilio credentials. Store the raw bytes temporarily (in memory or to /tmp). Optionally re-upload to Cloudinary for a permanent URL; otherwise use the Twilio URL directly (they persist for a short time).
+
+Step 2 — Vision LLM analysis per photo
+Send each image to the vision LLM with this system prompt:
+
+You are a solar installation site inspector. Analyze this construction site photo and return a JSON object with these fields:
+
+panels_detected (integer): number of solar panels visible that appear to be installed
+panels_with_issues (integer): count of panels that look misaligned, damaged, or incorrectly positioned
+issues (array of strings): brief description of each issue spotted, e.g. "Panel in row 3 appears tilted"
+notes (string): any other observations about the installation state
+If the image does not clearly show solar panels, return panels_detected: 0.
+Return only valid JSON. No markdown, no explanation.
+
+Step 3 — Aggregate across photos
+Sum panels_detected across photos but cap at project.total_panels (the photos may overlap or show the same panels from different angles). Use the maximum single-photo detection as the canonical count, not the sum. Average or take the maximum for issues. Combine all issue descriptions.
+
+Step 4 — Project association
+If the submitting phone number maps to exactly one active project → use it directly.
+If ambiguous (more than one project for that region) → reply asking "Which project? Reply 1 or 2:" and store state as awaiting_project_selection. For the demo, seed the demo phone number as associated with Greenfield Phase 1 to avoid this branch during recording.
+
+Step 5 — Calculate completion and invoice amount
+
+
+completion_pct = (panels_detected / project.total_panels) × 100
+claim_amount = project.contract_value × (completion_pct / 100)
+invoice_number = "PC-" + year + "-" + zero-padded sequential number
+Step 6 — Write to DB
+Insert inspection_reports row → get its ID → insert invoice_drafts row → insert activity_log rows for both. The SSE endpoint will pick up the activity log inserts and push to the frontend immediately.
+
+Step 7 — Reply via Twilio REST API
+Send a WhatsApp message back to the submitting number:
+
+
+Site Inspection Complete ✅
+
+Project: {project.name}
+📸 Photos analyzed: {count}
+🔢 Panels detected: {panels_detected} of {project.total_panels}
+⚠️ Issues flagged: {panels_with_issues}
+📈 Completion: {completion_pct:.0f}%
+
+Progress claim draft created:
+Invoice {invoice_number}
+Amount: RM {claim_amount:,.0f} ({completion_pct:.0f}% of RM {contract_value:,.0f})
+
+View in portal → {FRONTEND_BASE_URL}/projects/{project.id}
+6c. Procurement Agent
+Trigger: Text message with procurement intent.
+
+Step 1 — Extract procurement intent (LLM)
+Send the user's message to the LLM with this prompt:
+
+Extract procurement details from this message and return JSON:
+
+item_description (string): what is being requested
+quantity (integer): how many units, default 1 if unspecified
+site_or_region (string): location mentioned, or null
+urgency (string): "urgent", "normal", or "low"
+deadline_hint (string): any date/timeframe mentioned, or null
+Message: "{user_message}"
+Return only valid JSON.
+
+Step 2 — Vendor lookup
+Query vendors table filtered by region matching site_or_region. If no region was extracted or no match, return all active vendors. Order by on_time_rate DESC for the first recommendation.
+
+Step 3 — Acknowledge and signal RFQ dispatch
+Immediately reply to the user:
+
+
+Got it. Searching approved vendors for {region}... 🔍
+Then:
+
+
+RFQ sent to {count} vendors. Waiting for quotes...
+This two-part reply makes the agent feel like it is actually doing work asynchronously.
+
+Step 4 — Simulate quote (wait + LLM)
+Wait 8–10 seconds (async sleep — do not block the webhook response). Then call the LLM to generate a realistic quote:
+
+Generate a realistic supplier quote response as JSON:
+
+vendor_name (string): use this vendor name exactly: {top_vendor.company_name}
+item_description (string): {item_description}
+quantity (integer): {quantity}
+unit_price_myr (number): make it close to but slightly different from {top_vendor.unit_price_myr}, realistic variation ±5%
+delivery_days (integer): 2–5 days depending on urgency {urgency}
+notes (string): brief professional note from the vendor
+Return only valid JSON.
+
+This produces a realistic, slightly varied quote on each demo run.
+
+Step 5 — Present quote and save pending state
+Save the full pending PO details to conversation_sessions.context for the phone number. Set state = "awaiting_procurement_confirm". Reply:
+
+
+📋 Best Quote Received
+
+Vendor: {vendor_name}
+Item: {item_description}
+Qty: {quantity} units × RM {unit_price:.0f}
+Total: RM {total:.0f}
+Delivery: {delivery_days} days (on-time rate: {on_time_rate}%)
+
+Approve this PO? Reply YES to confirm.
+6d. Confirmation Handler
+Trigger: Message is "YES" and session state is awaiting_procurement_confirm.
+
+Load pending PO context from session. Insert purchase_orders row. Insert activity_log row. Reset session to idle. Reply:
+
+
+✅ {po_number} Created
+
+{vendor_name} has been notified.
+Expected delivery: {today + delivery_days}
+
+View PO → {FRONTEND_BASE_URL}/purchase-orders/{po.id}
+7. WhatsApp Integration Setup (Manual Steps)
+Create a free Twilio account at twilio.com
+Navigate to Messaging → Try it out → Send a WhatsApp message
+Note the Sandbox number (typically +1 415 523 8886 or similar)
+Deploy the backend first (Stage 1 of build). Copy the public HTTPS URL.
+In Twilio Sandbox settings, set the "When a message comes in" webhook to: {YOUR_BACKEND_URL}/webhook/whatsapp (HTTP POST)
+On the demo phone, join the sandbox by sending the join keyword (shown in Twilio dashboard, format: "join [two-random-words]") to the sandbox number via WhatsApp
+The Twilio sandbox supports up to 5 registered phone numbers — add any secondary phones needed for testing
+For demo: use one phone as both the "supervisor" (sends photos) and "PM" (sends procurement request). Single device keeps the demo cleaner on screen.
+Twilio credentials needed in backend environment:
+
+TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN
+TWILIO_WHATSAPP_NUMBER (the sandbox number, prefixed with whatsapp:)
+8. Frontend Dashboard
+Pages and Routes
+/ — Dashboard
+
+Header: "FieldBot Operations Portal"
+4 summary cards: Active Projects / Inspections This Month / Invoices Pending / POs This Month
+Live Activity Feed: scrolling list of the latest 20 activity log entries, newest on top, updating in real-time via SSE. Each entry shows an icon (camera for inspection, file for invoice, package for PO), description, and a relative timestamp ("just now", "2 minutes ago").
+Visual emphasis: when a new event arrives via SSE, the new activity feed item slides in from the top with a subtle highlight animation. Dashboard counters increment live. This is the "wow" shot for the demo.
+/projects — Projects List
+
+Simple card grid: project name, client, site location, contract value, status badge.
+/projects/:id — Project Detail
+
+Project header: name, client, site, total panels, contract value
+Three tabs: Inspections | Invoice Drafts | Purchase Orders
+Inspections tab: list of inspection reports with thumbnail grid of photos, completion percentage bar, issues count, timestamp
+Invoice Drafts tab: list with invoice number, claim amount, status badge
+Purchase Orders tab: list with PO number, vendor, item, total, status
+/purchase-orders — Purchase Orders List
+
+Full list across all projects. Columns: PO number, project, vendor, item, qty, total, status, date.
+Real-time (SSE)
+Single useEffect on the Dashboard component opens an EventSource to GET /events. On each event: prepend to activity feed state array, update the relevant counter. Use a React key based on event ID to animate the new entry in. No polling — the SSE connection stays open for the duration of the demo.
+
+Design Notes
+Dark sidebar, clean white content area, green accent color (solar/nature association)
+All numbers formatted as RM X,XXX for Malaysian Ringgit
+Mobile-responsive is not required — demo will be recorded on desktop screen only
+No authentication — this is a demo, open access is fine
+9. Demo Data & Asset Preparation
+Seed Data (run once via a seed script before demo)
+Projects:
+
+Field	Project 1	Project 2
+name	Greenfield Industrial Solar Phase 1	KL Tech Park Phase 2
+client_name	Greenfield Manufacturing Sdn Bhd	KLTP Holdings Berhad
+site_location	Bayan Lepas, Penang	Cyberjaya, Kuala Lumpur
+region	north	central
+total_panels	100	80
+contract_value	150,000.00	120,000.00
+Vendors:
+
+Field	Vendor 1	Vendor 2	Vendor 3
+company_name	YSP Solar Sdn Bhd	Green Energy Supply	SunTech Materials
+region	north	north	central
+contact_email	ops@yspsolar.com	sales@greenenergy.com	info@suntech.com
+on_time_rate	94.0	87.0	98.0
+unit_price_myr	320.00	300.00	340.00
+specialization	solar panels	solar panels	solar panels
+Conversation session: Pre-seed a row for the demo phone number mapping it to project ID 1 (Greenfield) so the inspection flow skips the project selection prompt.
+
+Demo Photos (Manual Asset Selection)
+Where to search: unsplash.com and pexels.com
+
+Search terms to use:
+
+"solar panel rooftop installation"
+"solar panel array construction"
+"solar panels roof workers"
+Criteria for selection:
+
+Looks like a real photo taken on a phone — imperfect angle, natural lighting, not a polished stock image composition
+Shows panels in varying states: some rows complete, some partial (this makes the "partial completion" story credible)
+At least one photo should have a small visible imperfection (a panel slightly off-angle, a gap in a row) for the AI to flag as an issue
+Avoid: aerial drone shots, perfectly symmetric arrays with no workers/context, 3D renders, night shots
+Pre-test requirement (critical): Before recording the demo, send each candidate photo to the chosen vision LLM with the inspection prompt. Select the 3 photos that produce the most compelling and accurate AI analysis output — correct panel count estimate, at least 1 flagged issue, realistic completion percentage between 70–90%. Discard photos where the LLM returns panels_detected: 0 or gives clearly wrong counts. Pre-testing takes 30–60 minutes but is essential to avoid a failed demo.
+
+Final selection: Save exactly 3 photos locally as site_photo_1.jpg, site_photo_2.jpg, site_photo_3.jpg. These are the only photos sent during the demo.
+
+10. Build Stages
+Stage 1 — Foundation (Day 1, Morning — ~4 hours)
+Goal: Running backend with database connected, seed data loadable, basic endpoints responding.
+
+Initialize FastAPI project with folder structure: app/, app/models/, app/routes/, app/services/, app/agents/
+Configure database connection using SQLAlchemy async or Tortoise ORM pointing at Supabase PostgreSQL URL
+Create all database models / tables (see Section 4)
+Write and run seed script (2 projects, 3 vendors, 1 demo conversation session)
+Implement GET endpoints: /projects, /projects/{id}, /vendors, /inspections, /invoices, /purchase-orders
+Implement POST endpoints: /inspections, /invoices, /purchase-orders (no business logic yet, just DB writes)
+Implement SSE /events endpoint — stub that sends a test event every 10 seconds to verify client connection works
+Verify: GET /projects returns the 2 seeded projects. SSE streams test events to a browser.
+Stage 2 — WhatsApp Webhook (Day 1, Afternoon — ~3 hours)
+Goal: Twilio can reach the backend, messages are received and logged, basic echo reply works.
+
+Create Twilio account, activate WhatsApp Sandbox, note credentials
+Deploy backend to Railway or Render (needed for a public HTTPS URL before Twilio can send webhooks — do this early, not on Day 4)
+Implement POST /webhook/whatsapp — parse Twilio payload, log the incoming message, send a hardcoded "Hello from FieldBot" reply via Twilio REST API
+Configure Twilio Sandbox webhook to point to the deployed URL
+Join the sandbox from the demo phone, send a test message, verify the echo reply arrives
+Add the intent router skeleton (inspect / procure / confirm / unknown) — routes to stub handlers that just log
+Add media detection: if MediaUrl0 present → log "image received"; else log "text received"
+Verify: send a text → backend logs "text received". Send a photo → backend logs "image received".
+Stage 3 — Act 1: Inspection Agent (Day 2 — ~6 hours)
+Goal: Full inspection flow works end-to-end: photos in WhatsApp → AI analysis → report in DB → reply sent → frontend updates.
+
+Implement image download function: given Twilio MediaUrl and credentials, download bytes
+Integrate vision LLM: implement analyze_photo(image_bytes) → dict that calls the vision LLM with the inspection system prompt and parses the returned JSON
+Implement aggregation logic: given a list of per-photo results, compute canonical panels_detected, panels_with_issues, combined issues list
+Implement project lookup by phone number (reads from conversation_sessions)
+Implement completion and invoice calculation
+Wire inspection agent: download all images → analyze each → aggregate → look up project → create inspection report → create invoice draft → write activity log → send WhatsApp reply
+Implement the SSE broadcast: whenever activity_log is written, push the event to all open SSE connections. Use an in-memory asyncio queue or PostgreSQL LISTEN/NOTIFY to bridge the DB write to the SSE stream. For simplicity, an in-memory event queue works for a single-server demo.
+Verify full flow: send 3 test photos from phone → reports appear in DB → WhatsApp reply received with correct numbers → SSE event fires → dashboard counter increments.
+Stage 4 — Act 2: Procurement Agent (Day 3, Morning — ~5 hours)
+Goal: Full procurement flow works: text message → vendor lookup → quote simulation → YES confirmation → PO created.
+
+Integrate text LLM: implement extract_procurement_intent(message) → dict calling LLM with extraction prompt
+Implement vendor lookup by region with fallback to all vendors
+Implement the two-part "searching… / RFQ sent…" reply sequence
+Implement quote simulation: async sleep 8 seconds → call LLM with quote generation prompt → parse JSON
+Implement session state write: save pending PO context to conversation_sessions, set state to awaiting_procurement_confirm
+Implement confirmation handler: read session context → insert purchase_orders row → reset session → reply with confirmation
+Wire everything through the intent router
+Verify full flow: send "Need 15 panels for Penang site" → get searching reply → get quote reply → send "YES" → PO appears in DB → WhatsApp confirmation received.
+Stage 5 — Frontend Dashboard (Day 3, Afternoon — ~4 hours)
+Goal: Portal is visually presentable, real-time updates work, WhatsApp deep links open correct pages.
+
+Initialize React + Vite + TypeScript + Tailwind
+Set up routing (React Router): /, /projects, /projects/:id, /purchase-orders
+Build Dashboard page: 4 summary stat cards + activity feed component
+Implement SSE client hook: useEffect that opens EventSource('/events'), pushes events into local state
+Wire activity feed to SSE: new events prepend to list with slide-in animation
+Build Projects list page: card grid with project data
+Build Project Detail page: tabbed view with inspection reports, invoice drafts, POs
+Build Purchase Orders list page
+Ensure deep links work: /projects/1 shows Greenfield Phase 1 details including any inspection reports and invoices created
+Deploy to Vercel, verify public URL matches what the WhatsApp replies link to
+Verify: run full Act 1 flow → dashboard updates in real time without page reload.
+Stage 6 — Demo Polish (Day 4 — ~4 hours)
+Goal: Everything is reliably reproducible for a clean demo recording.
+
+Photo pre-testing: Download 8–10 candidate photos from Unsplash/Pexels. Send each to the vision LLM with the inspection prompt. Select the 3 that produce the most accurate and compelling analysis. Save as site_photo_1.jpg through site_photo_3.jpg.
+Reset script: Write a reset_demo.py script that clears inspection_reports, invoice_drafts, purchase_orders, and activity_log, and resets conversation_sessions to idle state. Run this before each recording attempt to start from a clean slate.
+Dry run 3 times: Run the full demo script (Section 11) from start to finish without interruption. Fix any timing issues, LLM latency surprises, or UI glitches.
+Hardcode demo project association: Confirm the demo phone's conversation_session is seeded to project ID 1 so no "which project?" prompt appears mid-demo.
+WhatsApp formatting: Confirm all WhatsApp reply messages render correctly on the phone (no broken characters, numbers formatted correctly with RM prefix).
+Frontend polish: Verify fonts load, no layout breaks on the recording screen resolution, activity feed animation looks smooth.
+Record the BEFORE segment first — take real screenshots of a messy WhatsApp group (stage this manually: write out a convincing conversation thread of PM chasing invoice signatures and progress reports over 3 days). Record a spreadsheet being filled in manually. These clips go at the start of the video.
+Record demo video — full Act 1 + Act 2 as described in Section 11.
+11. Demo Script
+Recording format: Screen recording of desktop browser (portal dashboard visible) with phone on desk showing WhatsApp. Voiceover optional but the visuals should be self-explanatory.
+
+BEFORE segment (0:00–0:25)
+Show a staged WhatsApp group named "Site 3 Ops" with a conversation thread spanning 3 days
+Messages read: "can u do the inspection report", "ok will do", "done yet?", "sorry busy", "bro the invoice is overdue", "waiting for your report la"
+Cut to: an Excel spreadsheet titled "Progress Tracker" being manually updated
+Text overlay: "Solar project. 100 panels to install. Progress claim: 3 days. PO processing: 5 days."
+ACT 1 — Site Inspection (0:25–1:30)
+Phone visible, open WhatsApp, conversation with the FieldBot number
+Tap the photo attach button, select site_photo_1.jpg, send
+Send site_photo_2.jpg
+Send site_photo_3.jpg
+Agent reply arrives within seconds: "Analyzing your site photos… 🔍"
+~15–20 seconds pass (LLM analyzing)
+Agent sends the full inspection report summary (see Section 6b Step 7 for exact format)
+Cut to desktop: portal dashboard — activity feed shows "New inspection report created" sliding in, counter increments. Switch to Project Detail tab — inspection report visible with completion percentage bar. Invoice Drafts tab — invoice draft showing RM amount.
+Text overlay: "90 seconds. Zero portal logins."
+ACT 2 — Procurement (1:30–2:45)
+Back to phone/WhatsApp
+PM types and sends: "We're 15 panels short for the Penang site. Need them urgently."
+Agent reply: "Got it. Searching approved vendors for Penang… 🔍"
+Agent reply 2 seconds later: "RFQ sent to 2 vendors. Waiting for quotes…"
+8-second pause (visible waiting — shows this is a real async process)
+Agent sends the quote comparison message (see Section 6c Step 5 for exact format)
+PM types: YES
+Agent replies instantly with PO confirmation message
+Cut to desktop: portal dashboard — activity feed shows "PO-2026-001 created" sliding in. Switch to Purchase Orders page — PO visible with vendor name, total, status "sent".
+Text overlay: "4 minutes. One word to confirm."
+CLOSE (2:45–3:00)
+Split screen: left side = WhatsApp thread from the BEFORE segment (chaotic), right side = FieldBot WhatsApp thread (clean, 12 messages, all resolved)
+Portal dashboard visible below showing all created records
+Final text overlay: "Before: 8 days. After: same afternoon. No new tools. Just WhatsApp."
+12. Environment Variables Required
+
+# Database
+DATABASE_URL=postgresql+asyncpg://...
+
+# Twilio
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+
+# LLM (developer to fill in based on chosen provider)
+LLM_API_KEY=
+LLM_BASE_URL=          # if self-hosted or proxied
+LLM_VISION_MODEL=      # model ID for vision tasks
+LLM_TEXT_MODEL=        # model ID for text tasks (can be same model)
+
+# App
+FRONTEND_BASE_URL=https://fieldbot.vercel.app
+DEMO_PHONE_NUMBER=whatsapp:+60XXXXXXXXXX  # demo phone pre-seeded to project 1
+13. What Success Looks Like
+The demo video is complete when a first-time viewer can watch it and answer these three questions without any explanation:
+
+What was the problem? (Manual WhatsApp chaos, 8-day delays)
+What does the product do? (AI agent in WhatsApp that runs operations automatically)
+How much better is it? (Same afternoon instead of 8 days — shown with hard timestamps)
+If all three are answered by the visuals alone, the video passes the test.
+
+Update Todos
+
+Write comprehensive architecture plan document
+Document complete. Key decisions embedded in it that you should lock before handing to the coding agent:
+
+LLM provider — you need to fill in LLM_VISION_MODEL and LLM_TEXT_MODEL in the env vars. The vision model matters most — pick one you've already tested on real photos.
+
+Photo pre-testing (Stage 6, step 1) — don't skip this. The whole Act 1 demo lives or dies on whether the vision model gives a compelling count + issue flag on the 3 chosen photos. Budget 1 hour for this before recording.
+
+Quote simulation delay — the 8-second sleep in Act 2 is intentional. It makes the agent feel like it's actually doing async work. If you cut it, the quote appears too fast and looks fake.
+
+Deployment order — backend must be deployed to a public URL at the end of Day 1 (Stage 2), not Day 4. Twilio needs a live webhook URL to develop against. Building locally without this will block all agent work.
+
+One thing to flag: the document describes the demo phone as both the "supervisor" (sends photos) and the "PM" (sends procurement request). That's intentional — keeps the video simple. If you want to show two separate personas, use two phones, but it adds recording complexity for minimal gain.
+
+If I just run it locally, is hosting really necessary? (you don't have to change the plan, just answer the question)
+No.
+
+For the demo video, local is fine. You control everything — the backend runs on localhost:8000, frontend on localhost:5173, and you screen-record both.
+
+The only reason hosting matters is Twilio's webhook. Twilio needs a public HTTPS URL to POST incoming WhatsApp messages to your backend. Your local localhost is not reachable from Twilio's servers.
+
+Fix: use ngrok (free tier). Run ngrok http 8000 and it gives you a public HTTPS URL like https://abc123.ngrok.io that tunnels to your local backend. Paste that into the Twilio sandbox webhook setting. Done.
+
+So the full local setup is:
+
+Backend: localhost:8000
+Frontend: localhost:5173
+ngrok tunnel → Twilio webhook
+No Railway, no Render, no Vercel needed
+One caveat: ngrok free tier URLs reset every time you restart ngrok, so you'd need to update the Twilio webhook URL each session. Not a problem for a demo recording — you set it once and keep everything running.
+
+If I'm hosting it locally, Supabase is also unnecessary no? Storage can just be local
+Yes, correct.
+
+SQLite for the database — zero setup, single file, no connection string needed. For photos, just save them to a local /uploads folder and serve them as static files from FastAPI.
+
+The only thing to reconsider is the photo URL in the WhatsApp reply message. The plan has the agent send a portal link like http://localhost:5173/projects/1 — that link only works if the person reading the WhatsApp message is on the same machine. For a demo where you're screen-recording, that's fine. You tap the link in WhatsApp → it opens on your local browser → shows the portal. Works.
+
+So the simplified storage stack:
+
+Database: SQLite file (fieldbot.db)
+Photos: /uploads folder, served via FastAPI's StaticFiles mount at /static/uploads/
+Photo URLs stored in DB: http://localhost:8000/static/uploads/filename.jpg
+Supabase, Cloudinary, Azure — all gone. Nothing external except Twilio and the LLM API.

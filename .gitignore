@@ -1,0 +1,19 @@
+*.log
+__pycache__/
+*.pyc
+venv/
+node_modules/
+.env
+
+# Local agent/tool runtime state
+.claude/
+.omc/
+.omx/
+.codegraph/*
+!.codegraph/.gitignore
+
+# Local app/runtime artifacts
+*.db
+backend/uploads/
+frontend/dist/
+screenshots/
