@@ -1,49 +1,48 @@
+import { Camera, FileText, Package, Sparkles } from "lucide-react";
+import { cn } from "../lib/cn";
+import { formatRelativeTime } from "../lib/format";
 import type { ActivityEvent } from "../hooks/useActivityFeed";
 
-function iconFor(entityType: string | null): string {
+function iconFor(entityType: string | null) {
   switch (entityType) {
     case "inspection_report":
-      return "\u{1F4F7}"; // camera
+      return Camera;
     case "invoice_draft":
-      return "\u{1F4C4}"; // page
+      return FileText;
     case "purchase_order":
-      return "\u{1F4E6}"; // package
+      return Package;
     default:
-      return "\u{2728}";
+      return Sparkles;
   }
-}
-
-function relativeTime(iso: string): string {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 10) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
 }
 
 export default function ActivityFeed({ events }: { events: ActivityEvent[] }) {
   if (events.length === 0) {
-    return <p className="text-sm text-gray-400">No activity yet. Send a Telegram message to FieldBot to get started.</p>;
+    return <p className="text-sm text-muted">No activity yet. Send a Telegram message to FieldBot to get started.</p>;
   }
 
   return (
     <ul className="space-y-2">
-      {events.map((event, idx) => (
-        <li
-          key={event.id}
-          className={`flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm ${
-            idx === 0 ? "animate-slide-in ring-1 ring-green-300" : ""
-          }`}
-        >
-          <span className="text-xl">{iconFor(event.entity_type)}</span>
-          <div className="flex-1">
-            <p className="text-sm font-medium text-gray-900">{event.description}</p>
-            <p className="text-xs text-gray-400">{relativeTime(event.timestamp)}</p>
-          </div>
-        </li>
-      ))}
+      {events.map((event, idx) => {
+        const Icon = iconFor(event.entity_type);
+        return (
+          <li
+            key={event.id}
+            className={cn(
+              "flex items-start gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5",
+              idx === 0 && "motion-safe:animate-slide-in ring-1 ring-accent/40",
+            )}
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent">
+              <Icon className="size-3.5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text">{event.description}</p>
+              <p className="text-xs text-subtle">{formatRelativeTime(event.timestamp)}</p>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }

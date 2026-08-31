@@ -1,9 +1,11 @@
 """Resets demo state between recording attempts.
 
-Clears inspection_reports, invoice_drafts, purchase_orders, and activity_log.
-Resets conversation_sessions to idle while keeping their project_id context
-(so the demo phone stays pre-associated with project 1, per plan.txt Stage 6).
-Projects and vendors are left untouched.
+Clears inspection_reports, invoice_drafts, purchase_orders, activity_log, and
+(ARD §9) the new transactional tables — supplier_quotes, quote_line_items,
+feasibility_runs, chat_messages. Resets conversation_sessions to idle while
+keeping their project_id context (so the demo phone stays pre-associated with
+project 1, per plan.txt Stage 6). Projects, vendors, and the `components`
+catalog are left untouched (components is reference data, not demo state).
 
 Run before each dry run / recording attempt:
     python -m app.reset_demo
@@ -15,12 +17,16 @@ from sqlalchemy import delete, select, update
 from app.database import AsyncSessionLocal
 from app.models.models import (
     ActivityLog,
+    ChatMessage,
     ConversationSession,
+    FeasibilityRun,
     InspectionReport,
     InvoiceDraft,
     Project,
     PurchaseOrder,
+    QuoteLineItem,
     RFQ,
+    SupplierQuote,
 )
 
 
@@ -31,6 +37,11 @@ async def reset_demo():
         await db.execute(delete(InvoiceDraft))
         await db.execute(delete(InspectionReport))
         await db.execute(delete(ActivityLog))
+        # children before parents (no FK cascade configured)
+        await db.execute(delete(QuoteLineItem))
+        await db.execute(delete(FeasibilityRun))
+        await db.execute(delete(SupplierQuote))
+        await db.execute(delete(ChatMessage))
         await db.execute(update(ConversationSession).values(state="idle"))
         await db.execute(update(Project).values(budget_used_myr=0))
 
@@ -43,7 +54,11 @@ async def reset_demo():
             project_id = (s.context or {}).get("project_id")
             s.context = {"project_id": project_id} if project_id is not None else {}
         await db.commit()
-        print("Demo reset: inspections, invoices, POs, RFQs, activity log cleared; budget_used reset; sessions set to idle; chat history cleared.")
+        print(
+            "Demo reset: inspections, invoices, POs, RFQs, activity log, supplier quotes, "
+            "feasibility runs, chat messages cleared; budget_used reset; sessions set to idle "
+            "(components catalog untouched)."
+        )
 
 
 if __name__ == "__main__":

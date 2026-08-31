@@ -26,6 +26,17 @@ class Project(Base):
     budget_used_myr: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
+    # --- ARD §3.1: feasibility/engineering inputs (additive, all nullable/defaulted) ---
+    state: Mapped[str] = mapped_column(String, default="Selangor")
+    system_type: Mapped[str] = mapped_column(String, default="on_grid")  # on_grid | hybrid
+    monthly_consumption_kwh: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    tariff_category: Mapped[str] = mapped_column(String, default="domestic")  # domestic | commercial
+    roof_area_m2: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    roof_tilt_deg: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    roof_azimuth_deg: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    shading_factor: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)
+    obstructions: Mapped[list] = mapped_column(JSON, default=list)
+
     inspection_reports: Mapped[list["InspectionReport"]] = relationship(back_populates="project")
     invoice_drafts: Mapped[list["InvoiceDraft"]] = relationship(back_populates="project")
     purchase_orders: Mapped[list["PurchaseOrder"]] = relationship(back_populates="project")
@@ -43,6 +54,12 @@ class Vendor(Base):
     specialization: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    # --- ARD §3.2 ---
+    bnef_tier: Mapped[int | None] = mapped_column(nullable=True)  # 1 | 2
+    brands_carried: Mapped[list] = mapped_column(JSON, default=list)
+    country: Mapped[str] = mapped_column(String, default="Malaysia")
+    quote_currency: Mapped[str] = mapped_column(String, default="MYR")
 
 
 class InspectionReport(Base):
@@ -84,7 +101,13 @@ class PurchaseOrder(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id"))
+    # Nullable: services/po_engine.py's generate_po() intentionally creates a status="draft" PO
+    # with vendor_id=None when a feasibility run's quote didn't resolve to a matched vendor (ARD
+    # §5.1 also documents PoGenerateRequest.vendor_id as optional). Integration finding (E.3 live
+    # pass): this was still `Mapped[int]` (NOT NULL) here, so that exact code path raised a raw
+    # sqlite3.IntegrityError instead of the clean draft PO it was designed to produce — reproduced
+    # live via the chat "approve and generate the PO" flow against a quote-less feasibility run.
+    vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id"), nullable=True)
     po_number: Mapped[str] = mapped_column(String, nullable=False)
     item_description: Mapped[str] = mapped_column(Text, nullable=False)
     quantity: Mapped[int] = mapped_column(nullable=False)
@@ -137,4 +160,133 @@ class ActivityLog(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     entity_type: Mapped[str | None] = mapped_column(String, nullable=True)
     entity_id: Mapped[int | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+# ============================================================================
+# ARD §3.3 — new tables for the feasibility/procurement/chat platform layer.
+# Additive only; nothing above this line changes shape for existing rows.
+# ============================================================================
+
+
+class Component(Base):
+    """A catalogued module or inverter — seeded from the vendored CEC CSVs
+    (ARD D4) plus anything captured from a parsed supplier quote whose model
+    wasn't in the catalog (source='parsed_quote')."""
+
+    __tablename__ = "components"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)  # module | inverter
+    manufacturer: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    tier: Mapped[int | None] = mapped_column(nullable=True)
+
+    # module fields
+    rated_wp: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    vmp: Mapped[float | None] = mapped_column(Numeric(8, 3), nullable=True)
+    voc: Mapped[float | None] = mapped_column(Numeric(8, 3), nullable=True)
+    imp: Mapped[float | None] = mapped_column(Numeric(8, 3), nullable=True)
+    isc: Mapped[float | None] = mapped_column(Numeric(8, 3), nullable=True)
+    temp_coeff_voc_pct_per_c: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    efficiency_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    cell_tech: Mapped[str | None] = mapped_column(String, nullable=True)
+    area_m2: Mapped[float | None] = mapped_column(Numeric(6, 3), nullable=True)
+
+    # inverter fields
+    ac_rating_kw: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    max_dc_input_kw: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    mppt_min_v: Mapped[float | None] = mapped_column(Numeric(7, 2), nullable=True)
+    mppt_max_v: Mapped[float | None] = mapped_column(Numeric(7, 2), nullable=True)
+    max_dc_voltage_v: Mapped[float | None] = mapped_column(Numeric(7, 2), nullable=True)
+    max_input_current_per_mppt_a: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    mppt_count: Mapped[int | None] = mapped_column(nullable=True)
+    phase: Mapped[str | None] = mapped_column(String, nullable=True)  # single | three
+    euro_efficiency_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    has_anti_islanding: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # shared
+    datasheet_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String, default="CEC")  # CEC | manufacturer | parsed_quote
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class SupplierQuote(Base):
+    """One parsed vendor PDF/image quote (ARD §3.3 / §5.4)."""
+
+    __tablename__ = "supplier_quotes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id"), nullable=True)
+    supplier_name_raw: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    currency: Mapped[str] = mapped_column(String, default="MYR")
+    fx_rate_to_myr: Mapped[float] = mapped_column(Numeric(8, 4), default=1.0)
+    page_count: Mapped[int | None] = mapped_column(nullable=True)
+    parse_status: Mapped[str] = mapped_column(String, default="parsed")  # parsed | partial | failed
+    parse_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_llm_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    subtotal_myr: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    line_items: Mapped[list["QuoteLineItem"]] = relationship(back_populates="quote")
+
+
+class QuoteLineItem(Base):
+    __tablename__ = "quote_line_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quote_id: Mapped[int] = mapped_column(ForeignKey("supplier_quotes.id"))
+    line_no: Mapped[int] = mapped_column(nullable=False)
+    category: Mapped[str] = mapped_column(String, default="unknown")  # module|inverter|battery|bos|service|unknown
+    manufacturer: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String, nullable=True)
+    unit_price_myr: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    line_total_myr: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    rated_wp: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    price_per_wp_myr: Mapped[float | None] = mapped_column(Numeric(8, 4), nullable=True)
+    warranty_years: Mapped[int | None] = mapped_column(nullable=True)
+    lead_time_days: Mapped[int | None] = mapped_column(nullable=True)
+    bnef_tier1: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    tier_match_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    flags: Mapped[list] = mapped_column(JSON, default=list)
+
+    quote: Mapped["SupplierQuote"] = relationship(back_populates="line_items")
+
+
+class FeasibilityRun(Base):
+    __tablename__ = "feasibility_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    quote_id: Mapped[int | None] = mapped_column(ForeignKey("supplier_quotes.id"), nullable=True)
+    module_component_id: Mapped[int | None] = mapped_column(ForeignKey("components.id"), nullable=True)
+    inverter_component_id: Mapped[int | None] = mapped_column(ForeignKey("components.id"), nullable=True)
+    system_type: Mapped[str] = mapped_column(String, default="on_grid")
+    inputs: Mapped[dict] = mapped_column(JSON, default=dict)
+    results: Mapped[dict] = mapped_column(JSON, default=dict)  # the full serialised DesignReport (ARD §5.3)
+    status: Mapped[str] = mapped_column(String, default="pass")  # pass | warn | fail
+    confidence_score: Mapped[int | None] = mapped_column(nullable=True)
+    confidence_band: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_key: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)  # user | assistant | system
+    content: Mapped[str] = mapped_column(Text, default="")
+    cards: Mapped[list] = mapped_column(JSON, default=list)
+    attachments: Mapped[list] = mapped_column(JSON, default=list)
+    tool_trace: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)

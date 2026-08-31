@@ -4,7 +4,29 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FieldBot Operations Portal</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="SitePilot — an agentic co-pilot for solar EPC teams: field capture, quote parsing, engineering feasibility, and procurement in one dashboard."
+    />
+    <title>SitePilot — Solar Ops Co-Pilot</title>
+    <script>
+      // Applies the stored theme preference (or the OS preference) before first paint so there is
+      // no flash of the wrong theme. Keep this in sync with src/lib/theme.ts's THEME_BOOTSTRAP_SCRIPT.
+      (function () {
+        try {
+          var pref = localStorage.getItem("sitepilot-theme");
+          var root = document.documentElement;
+          if (pref === "light" || pref === "dark") {
+            root.setAttribute("data-theme", pref);
+            root.style.colorScheme = pref;
+          } else {
+            var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+            root.style.colorScheme = dark ? "dark" : "light";
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

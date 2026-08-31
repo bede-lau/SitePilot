@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     rfq_poll_seconds: int = 20
     rfq_batch_timeout_seconds: int = 120  # finalize a batch even if not every vendor replied
 
+    # --- ElevenLabs voice (ARD §8 / D1). Empty key -> voice.py stub responses. ---
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_stt_model: str = "scribe_v1"
+
+    # Static FX rate used to normalise USD supplier quotes to MYR (ARD §5.4/§9).
+    usd_myr_rate: float = 4.72
+
     frontend_base_url: str = "http://localhost:5173"
     # Identity of the demo user. With Telegram this is the numeric chat id (as a
     # string) of the account that messages the bot — set it so the seeded session
@@ -67,6 +75,10 @@ class Settings(BaseSettings):
     @property
     def effective_imap_password(self) -> str:
         return self.imap_password or self.smtp_password
+
+    @property
+    def voice_enabled(self) -> bool:
+        return bool(self.elevenlabs_api_key)
 
 
 settings = Settings()

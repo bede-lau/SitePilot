@@ -25,14 +25,23 @@ async def run_inspection(db: AsyncSession, session: ConversationSession, from_nu
         send_message(from_number, "Which project is this for? Reply with the project name.")
         return
 
+    # Integration finding (E.4/E.5 live pass): download_telegram_media raises on any
+    # non-2xx Telegram response (expired file_id, transient API hiccup) — same bug as
+    # the voice-note path in routes/webhook.py, reproduced there as an unhandled 500.
+    # A single bad photo among several must not blow up the whole inspection; skip it
+    # and keep going, and only bail out if every photo failed.
     per_photo_results = []
     for file_id in media_file_ids:
-        image_bytes = await download_telegram_media(file_id)
-        result = await analyze_photo(image_bytes)
+        try:
+            image_bytes = await download_telegram_media(file_id)
+            result = await analyze_photo(image_bytes)
+        except Exception:
+            logger.exception("photo download/analyze failed from=%s file_id=%s", from_number, file_id)
+            continue
         per_photo_results.append(result)
 
     if not per_photo_results:
-        send_message(from_number, "No photos received. Please attach site photos.")
+        send_message(from_number, "Couldn't process those photos — please try sending them again.")
         return
 
     # Canonical count = max single-photo detection, capped at project total (per plan.txt 6b step 3)

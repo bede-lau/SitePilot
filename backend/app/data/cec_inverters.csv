@@ -1,0 +1,38 @@
+manufacturer,model,tier,ac_rating_kw,max_dc_input_kw,mppt_min_v,mppt_max_v,max_dc_voltage_v,max_input_current_per_mppt_a,mppt_count,phase,euro_efficiency_pct,has_anti_islanding,datasheet_url
+Huawei,SUN2000-3KTL-L1,1,3,4.5,90,560,600,12.5,2,single,98.3,True,https://solar.huawei.com/
+Huawei,SUN2000-5KTL-L1,1,5,7.5,90,560,600,12.5,2,single,98.4,True,https://solar.huawei.com/
+Huawei,SUN2000-8KTL-M1,1,8,12,200,1000,1080,22,2,three,98.6,True,https://solar.huawei.com/
+Huawei,SUN2000-10KTL-M1,1,10,13,120,500,1080,26,2,three,98.6,True,https://solar.huawei.com/
+Huawei,SUN2000-12KTL-M2,1,12,18,200,1000,1100,22,2,three,98.7,True,https://solar.huawei.com/
+Huawei,SUN2000-15KTL-M2,1,15,22.5,200,1000,1100,22,4,three,98.7,True,https://solar.huawei.com/
+Sungrow,SG3.0RS,1,3,4.5,80,550,600,13.5,2,single,98.2,True,https://en.sungrowpower.com/
+Sungrow,SG5.0RS,1,5,7.5,80,550,600,13.5,2,single,98.3,True,https://en.sungrowpower.com/
+Sungrow,SG8.0RT,1,8,12,160,950,1100,26,2,three,98.6,True,https://en.sungrowpower.com/
+Sungrow,SG10RT,1,10,15,160,950,1100,26,2,three,98.6,True,https://en.sungrowpower.com/
+Sungrow,SG15RT,1,15,22.5,160,950,1100,26,3,three,98.7,True,https://en.sungrowpower.com/
+Sungrow,SH10RT (Hybrid),1,10,13,160,950,1100,26,2,three,98.4,True,https://en.sungrowpower.com/
+Solis,S6-GR1P3K,1,3,4.5,60,500,600,13,2,single,97.6,True,https://www.solisinverters.com/
+Solis,S6-GR1P5K,1,5,7.5,60,500,600,13,2,single,97.8,True,https://www.solisinverters.com/
+Solis,S6-GR3P8K,1,8,12,140,950,1100,26,2,three,98.3,True,https://www.solisinverters.com/
+Solis,S6-GR3P10K,1,10,15,140,950,1100,26,2,three,98.3,True,https://www.solisinverters.com/
+Solis,S6-RHI-6K-48ES (Hybrid),1,6,9,100,500,550,26,2,single,97.5,True,https://www.solisinverters.com/
+Growatt,MIN 3000TL-X,1,3,4.5,60,550,600,13.5,2,single,97.6,True,https://www.ginverter.com/
+Growatt,MIN 5000TL-X,1,5,7.5,60,550,600,13.5,2,single,97.8,True,https://www.ginverter.com/
+Growatt,MOD 10KTL3-X,1,10,15,140,950,1100,26,2,three,98.3,True,https://www.ginverter.com/
+Growatt,SPH 6000TL3 BH-UP (Hybrid),1,6,9,120,550,600,16,2,three,97.6,True,https://www.ginverter.com/
+Growatt,SPH 10000TL3 BH-UP (Hybrid),1,10,13,120,550,600,16,2,three,97.9,True,https://www.ginverter.com/
+Deye,SUN-5K-G03,1,5,7.5,80,500,550,13.5,2,single,97.6,True,https://www.deyeinverter.com/
+Deye,SUN-10K-G03,1,10,15,140,950,1100,26,2,three,98.2,True,https://www.deyeinverter.com/
+Deye,SUN-8K-SG01HP3-EU (Hybrid),1,8,12,120,500,550,26,2,three,97.5,True,https://www.deyeinverter.com/
+Deye,SUN-12K-SG01HP3-EU (Hybrid),1,12,18,120,500,550,26,2,three,97.8,True,https://www.deyeinverter.com/
+SMA,Sunny Boy 5.0,1,5,7.5,80,500,600,12.5,2,single,97.6,True,https://www.sma.de/en/
+SMA,Sunny Tripower 10.0,1,10,15,150,800,1000,18,2,three,98.2,True,https://www.sma.de/en/
+SMA,Sunny Tripower 15.0,1,15,22.5,150,800,1000,18,3,three,98.3,True,https://www.sma.de/en/
+Fronius,Symo 5.0-3-M,1,5,7.5,80,800,1000,16.5,2,three,98.0,True,https://www.fronius.com/en/solar-energy
+Fronius,Symo 10.0-3-M,1,10,15,150,800,1000,16.5,2,three,98.1,True,https://www.fronius.com/en/solar-energy
+Fronius,Symo GEN24 10.0 Plus (Hybrid),1,10,13.5,80,800,1000,16,2,three,97.9,True,https://www.fronius.com/en/solar-energy
+GoodWe,GW5000-DT,1,5,7.5,100,950,1100,13.5,2,three,98.1,True,https://www.goodwe.com/
+GoodWe,GW10K-DT,1,10,15,140,950,1100,26,2,three,98.3,True,https://www.goodwe.com/
+GoodWe,GW10K-ET (Hybrid),1,10,13,160,950,1100,26,2,three,97.6,True,https://www.goodwe.com/
+Growatt,MIN 3000TL-XE,2,3,4.5,60,550,600,13.5,1,single,96.8,True,https://www.ginverter.com/
+Solis,Mini 3000-4G,2,3,4.5,60,500,600,13,1,single,96.5,True,https://www.solisinverters.com/

@@ -14,6 +14,19 @@ node_modules/
 
 # Local app/runtime artifacts
 *.db
-backend/uploads/
+# `backend/uploads/*` (not `backend/uploads/`) so the negation below can still
+# reach inside — git can't re-include a path under a fully-excluded directory.
+backend/uploads/*
+# ...except the pre-generated messy-quote demo fixtures (ARD §7) — the live demo
+# must not depend on running scripts/generate_messy_quote.py.
+!backend/uploads/quotes
 frontend/dist/
+
+# Local scratch — screenshots pasted into the coding session
 screenshots/
+
+# Generated deliverable exports — the .md specs in-repo are the source of truth
+*.docx
+*.pdf
+AI_Disclosure_Statement.txt
+Project_Summary.txt

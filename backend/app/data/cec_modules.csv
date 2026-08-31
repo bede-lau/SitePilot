@@ -1,0 +1,46 @@
+manufacturer,model,tier,rated_wp,vmp,voc,imp,isc,temp_coeff_voc_pct_per_c,efficiency_pct,cell_tech,area_m2,datasheet_url
+Longi,Hi-MO7 LR5-72HTH-545M,1,545,41.0,49.3,13.29,13.95,-0.24,21.1,N-type TOPCon,2.58,https://www.longi.com/en/products/modules/himo7/
+Longi,Hi-MO7 LR5-72HTH-550M,1,550,41.5,49.6,13.2,14.0,-0.24,21.3,N-type TOPCon,2.58,https://www.longi.com/en/products/modules/himo7/
+Longi,Hi-MO7 LR5-72HTH-555M,1,555,41.9,49.9,13.25,14.05,-0.24,21.5,N-type TOPCon,2.58,https://www.longi.com/en/products/modules/himo7/
+Longi,Hi-MO6 LR5-54HTH-425M,1,425,39.2,46.9,10.84,11.5,-0.26,21.9,N-type TOPCon,1.94,https://www.longi.com/en/products/modules/himo6/
+Longi,Hi-MO6 LR5-54HTH-440M,1,440,40.1,47.8,10.97,11.62,-0.26,22.3,N-type TOPCon,1.94,https://www.longi.com/en/products/modules/himo6/
+Longi,Hi-MO X10 LR5-72HGD-620M,1,620,43.8,52.6,14.16,14.9,-0.24,22.8,N-type HPBC,2.61,https://www.longi.com/en/products/modules/
+Trina Solar,Vertex S+ TSM-NEG9R.28-430,1,430,39.6,47.4,10.86,11.53,-0.26,21.5,N-type TOPCon,1.96,https://www.trinasolar.com/en-glb/product/vertex-s-plus
+Trina Solar,Vertex S+ TSM-NEG9R.28-440,1,440,40.3,48.1,10.92,11.6,-0.26,22.0,N-type TOPCon,1.96,https://www.trinasolar.com/en-glb/product/vertex-s-plus
+Trina Solar,Vertex TSM-DE19R.08-550,1,550,41.6,49.7,13.22,14.03,-0.25,21.4,P-type PERC,2.58,https://www.trinasolar.com/en-glb/product/vertex
+Trina Solar,Vertex N TSM-NEG21C.20-605,1,605,43.1,51.7,14.04,14.78,-0.24,22.1,N-type TOPCon,2.72,https://www.trinasolar.com/en-glb/product/vertex-n
+Trina Solar,Vertex N TSM-NEG21C.20-615,1,615,43.5,52.2,14.14,14.9,-0.24,22.4,N-type TOPCon,2.72,https://www.trinasolar.com/en-glb/product/vertex-n
+Trina Solar,Vertex N TSM-NEG21C.20-625,1,625,43.9,52.7,14.24,15.02,-0.24,22.8,N-type TOPCon,2.72,https://www.trinasolar.com/en-glb/product/vertex-n
+JA Solar,DeepBlue 3.0 JAM54S31-415/MR,1,415,38.6,46.3,10.75,11.42,-0.27,21.3,N-type TOPCon,1.95,https://www.jasolar.com/html/en/
+JA Solar,DeepBlue 3.0 JAM54S31-425/MR,1,425,39.4,47.1,10.79,11.48,-0.27,21.8,N-type TOPCon,1.95,https://www.jasolar.com/html/en/
+JA Solar,DeepBlue 4.0 JAM72S30-545/MR,1,545,41.2,49.4,13.23,13.98,-0.26,21.1,P-type PERC,2.58,https://www.jasolar.com/html/en/
+JA Solar,DeepBlue 4.0 JAM72S30-550/MR,1,550,41.6,49.7,13.23,14.02,-0.26,21.3,P-type PERC,2.58,https://www.jasolar.com/html/en/
+JA Solar,DeepBlue 4.0 Pro JAM66D45-590/MB,1,590,42.9,51.4,13.76,14.5,-0.24,22.5,N-type TOPCon Bifacial,2.61,https://www.jasolar.com/html/en/
+Risen Energy,RSM40-8-410M,1,410,37.9,45.4,10.82,11.46,-0.27,21.0,P-type PERC,1.95,https://www.risenenergy.com/en/product
+Risen Energy,RSM40-8-420M,1,420,38.6,46.2,10.88,11.53,-0.27,21.5,P-type PERC,1.95,https://www.risenenergy.com/en/product
+Risen Energy,Titan RSM110-8-590M,1,590,42.4,50.9,13.92,14.66,-0.25,22.0,N-type TOPCon,2.68,https://www.risenenergy.com/en/product
+Risen Energy,Titan RSM110-8-605M,1,605,43.0,51.6,14.07,14.82,-0.25,22.5,N-type TOPCon,2.68,https://www.risenenergy.com/en/product
+Canadian Solar,HiKu6 CS6W-540MS,1,540,40.9,49.1,13.2,13.87,-0.29,20.9,P-type PERC,2.58,https://www.canadiansolar.com/hiku6/
+Canadian Solar,HiKu6 CS6W-550MS,1,550,41.4,49.6,13.28,13.97,-0.29,21.3,P-type PERC,2.58,https://www.canadiansolar.com/hiku6/
+Canadian Solar,HiKu7 CS7N-620MS,1,620,43.6,52.3,14.22,14.97,-0.26,22.3,N-type TOPCon,2.72,https://www.canadiansolar.com/hiku7/
+Canadian Solar,HiKu7 CS7N-630MS,1,630,44.1,52.9,14.29,15.06,-0.26,22.7,N-type TOPCon,2.72,https://www.canadiansolar.com/hiku7/
+Canadian Solar,TopHiKu6 CS6R-430MS,1,430,39.5,47.2,10.89,11.55,-0.29,21.4,P-type PERC,1.99,https://www.canadiansolar.com/tophiku6/
+Jinko Solar,Tiger Neo JKM415N-54HL4-BDV,1,415,38.5,46.1,10.78,11.45,-0.25,21.4,N-type TOPCon Bifacial,1.95,https://www.jinkosolar.com/en/products/tiger-neo
+Jinko Solar,Tiger Neo JKM430N-54HL4-BDV,1,430,39.6,47.3,10.86,11.53,-0.25,22.0,N-type TOPCon Bifacial,1.95,https://www.jinkosolar.com/en/products/tiger-neo
+Jinko Solar,Tiger Neo JKM575N-72HL4-BDV,1,575,41.9,50.3,13.72,14.44,-0.25,22.3,N-type TOPCon Bifacial,2.58,https://www.jinkosolar.com/en/products/tiger-neo
+Jinko Solar,Tiger Neo JKM590N-78HL4-BDV,1,590,43.2,51.8,13.66,14.42,-0.25,22.6,N-type TOPCon Bifacial,2.79,https://www.jinkosolar.com/en/products/tiger-neo
+Jinko Solar,Tiger Neo JKM605N-78HL4-BDV,1,605,43.9,52.6,13.78,14.55,-0.25,23.1,N-type TOPCon Bifacial,2.79,https://www.jinkosolar.com/en/products/tiger-neo
+Astronergy,ASTRO N5s CHSM54N(H)-435,1,435,39.9,47.7,10.9,11.6,-0.26,21.6,N-type TOPCon,1.95,https://www.astronergy.com/en/
+Astronergy,ASTRO N5s CHSM54N(H)-450,1,450,40.8,48.7,11.03,11.72,-0.26,22.3,N-type TOPCon,1.95,https://www.astronergy.com/en/
+Astronergy,ASTRO N6 CHSM72N(H)-585,1,585,42.6,51.1,13.73,14.48,-0.25,22.2,N-type TOPCon,2.61,https://www.astronergy.com/en/
+Astronergy,ASTRO N6 CHSM72N(H)-600,1,600,43.2,51.9,13.89,14.63,-0.25,22.7,N-type TOPCon,2.61,https://www.astronergy.com/en/
+DAS Solar,DAS DS72N-585W,1,585,42.5,51.0,13.76,14.5,-0.25,22.1,N-type TOPCon,2.61,https://www.dassolar.com/
+Boviet Solar,Vega Grande BVM7615M-605,1,605,43.1,51.7,14.04,14.78,-0.26,22.0,N-type TOPCon,2.72,https://www.bovietsolar.com/
+Waaree Energies,Bison ADP W-550,2,550,41.3,49.5,13.31,14.06,-0.29,21.0,P-type PERC,2.58,https://www.waaree.com/
+Adani Solar,Elan+ 605Wp,2,605,43.0,51.5,14.07,14.85,-0.28,21.9,N-type TOPCon,2.72,https://www.adanisolar.com/
+ZNShine Solar,ZXM7-UHD144 605W,2,605,43.0,51.6,14.07,14.8,-0.29,21.9,N-type TOPCon,2.72,https://www.znshinesolar.com/
+Qcells,Q.TRON BLK M-G2+ 420,1,420,38.8,46.4,10.83,11.48,-0.27,21.6,N-type Q.ANTUM,1.95,https://www.qcells.com/
+Qcells,Q.TRON BLK M-G2+ 435,1,435,39.9,47.6,10.91,11.6,-0.27,22.1,N-type Q.ANTUM,1.95,https://www.qcells.com/
+Risen Energy,RSM40-8-405P,2,405,37.5,44.9,10.8,11.42,-0.29,20.7,P-type PERC,1.95,https://www.risenenergy.com/en/product
+Canadian Solar,HiKu5 CS5W-400MS,2,400,37.4,44.8,10.7,11.4,-0.3,20.5,P-type PERC,1.95,https://www.canadiansolar.com/
+JA Solar,DeepBlue 3.0 JAM60S21-400/MR,2,400,37.6,45.0,10.65,11.3,-0.3,20.6,P-type PERC,1.95,https://www.jasolar.com/html/en/

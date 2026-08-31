@@ -16,7 +16,16 @@ _client: AsyncOpenAI | None = None
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url or None)
+        # DashScope's default (no timeout, 2 retries) means a single stalled request
+        # can hang the whole chat turn for minutes. Cap it: 45s/request, one retry,
+        # 10s to connect. A slow model is better surfaced as an error than an
+        # indefinite spinner.
+        _client = AsyncOpenAI(
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url or None,
+            timeout=45.0,
+            max_retries=1,
+        )
     return _client
 
 

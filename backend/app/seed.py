@@ -1,10 +1,15 @@
 import asyncio
+import csv
+import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from app.config import settings
 from app.database import AsyncSessionLocal, Base, engine
+from app.db_upgrade import run_upgrade
 from app.models.models import (
     ActivityLog,
+    Component,
     ConversationSession,
     InspectionReport,
     InvoiceDraft,
@@ -12,6 +17,92 @@ from app.models.models import (
     PurchaseOrder,
     Vendor,
 )
+
+logger = logging.getLogger("fieldbot.seed")
+
+DATA_DIR = Path(__file__).parent / "data"
+
+# Alias-matching CSV loader (ARD §9 / D4): Agent A's exact column headers for
+# app/data/cec_modules.csv and cec_inverters.csv weren't finalized when this
+# was written, so each Component field tries several plausible header
+# spellings rather than assuming one. Missing columns just stay None.
+_MODULE_FIELD_ALIASES = {
+    "manufacturer": ["manufacturer", "brand", "mfr"],
+    "model": ["model", "model_name", "part_number"],
+    "tier": ["tier", "bnef_tier"],
+    "rated_wp": ["rated_wp", "wp", "watts", "power_w", "pmax_w", "rated_power_w"],
+    "vmp": ["vmp", "v_mp", "vmpp"],
+    "voc": ["voc", "v_oc"],
+    "imp": ["imp", "i_mp", "impp"],
+    "isc": ["isc", "i_sc"],
+    "temp_coeff_voc_pct_per_c": ["temp_coeff_voc_pct_per_c", "temp_coeff_voc", "beta_voc_pct_per_c", "voc_temp_coeff"],
+    "efficiency_pct": ["efficiency_pct", "efficiency"],
+    "cell_tech": ["cell_tech", "technology", "cell_technology"],
+    "area_m2": ["area_m2", "area"],
+    "datasheet_url": ["datasheet_url", "datasheet"],
+}
+_INVERTER_FIELD_ALIASES = {
+    "manufacturer": ["manufacturer", "brand", "mfr"],
+    "model": ["model", "model_name", "part_number"],
+    "tier": ["tier", "bnef_tier"],
+    "ac_rating_kw": ["ac_rating_kw", "ac_kw", "rated_ac_kw"],
+    "max_dc_input_kw": ["max_dc_input_kw", "max_dc_kw", "dc_input_kw"],
+    "mppt_min_v": ["mppt_min_v", "mppt_min"],
+    "mppt_max_v": ["mppt_max_v", "mppt_max"],
+    "max_dc_voltage_v": ["max_dc_voltage_v", "max_dc_v", "vmax_dc"],
+    "max_input_current_per_mppt_a": ["max_input_current_per_mppt_a", "max_current_per_mppt", "imax_mppt"],
+    "mppt_count": ["mppt_count", "num_mppt"],
+    "phase": ["phase"],
+    "euro_efficiency_pct": ["euro_efficiency_pct", "euro_efficiency"],
+    "has_anti_islanding": ["has_anti_islanding", "anti_islanding"],
+    "datasheet_url": ["datasheet_url", "datasheet"],
+}
+_NUMERIC_FIELDS = {
+    "tier", "rated_wp", "vmp", "voc", "imp", "isc", "temp_coeff_voc_pct_per_c", "efficiency_pct", "area_m2",
+    "ac_rating_kw", "max_dc_input_kw", "mppt_min_v", "mppt_max_v", "max_dc_voltage_v",
+    "max_input_current_per_mppt_a", "mppt_count",
+}
+_BOOL_FIELDS = {"has_anti_islanding"}
+
+
+def _extract(row: dict, aliases: dict[str, list[str]]) -> dict:
+    row_lower = {k.strip().lower(): v for k, v in row.items() if k}
+    out = {}
+    for field, names in aliases.items():
+        value = None
+        for name in names:
+            if name in row_lower and row_lower[name] not in (None, ""):
+                value = row_lower[name]
+                break
+        if value is None:
+            out[field] = None
+            continue
+        if field in _NUMERIC_FIELDS:
+            try:
+                out[field] = float(value)
+                if field in ("tier", "mppt_count") and out[field] is not None:
+                    out[field] = int(out[field])
+            except (TypeError, ValueError):
+                out[field] = None
+        elif field in _BOOL_FIELDS:
+            out[field] = str(value).strip().lower() in ("true", "1", "yes", "y")
+        else:
+            out[field] = str(value).strip()
+    return out
+
+
+def _load_components_from_csv(path: Path, kind: str, aliases: dict[str, list[str]]) -> list[Component]:
+    if not path.exists():
+        logger.warning("component CSV not found at %s — skipping %s catalog seed (Agent A hasn't landed it yet)", path, kind)
+        return []
+    components = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            fields = _extract(row, aliases)
+            if not fields.get("manufacturer") or not fields.get("model"):
+                continue
+            components.append(Component(kind=kind, source="CEC", **fields))
+    return components
 
 
 def days_ago(n: float) -> datetime:
@@ -67,8 +158,14 @@ STATIC_POS = {
 async def seed():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await run_upgrade(conn)
 
     async with AsyncSessionLocal() as db:
+        # --- ARD §9: existing 4 fixed-history projects + 2 live-demo projects keep
+        # their exact name/email/contract_value/total_panels (source of truth).
+        # New columns (state/system_type/monthly_consumption_kwh/tariff_category/
+        # roof params/obstructions) are additive backfill only. Live-demo projects
+        # (Greenfield, KL Tech Park) keep monthly_consumption_kwh=None per ARD §9.
         projects = [
             Project(
                 name="Greenfield Industrial Solar Phase 1",
@@ -81,6 +178,10 @@ async def seed():
                 status="active",
                 customer_email="orahome.mail+greenfield@gmail.com",
                 created_at=days_ago(70),
+                state="Penang",
+                system_type="on_grid",
+                tariff_category="commercial",
+                obstructions=[],
             ),
             Project(
                 name="KL Tech Park Phase 2",
@@ -93,6 +194,10 @@ async def seed():
                 status="active",
                 customer_email="orahome.mail+kltp@gmail.com",
                 created_at=days_ago(55),
+                state="Selangor",
+                system_type="on_grid",
+                tariff_category="commercial",
+                obstructions=[],
             ),
             Project(
                 name="Johor Bahru Rooftop Array",
@@ -105,6 +210,14 @@ async def seed():
                 status="active",
                 customer_email="orahome.mail+jblogistics@gmail.com",
                 created_at=days_ago(40),
+                state="Johor",
+                system_type="on_grid",
+                monthly_consumption_kwh=4800,
+                tariff_category="commercial",
+                roof_tilt_deg=10,
+                roof_azimuth_deg=15,
+                shading_factor=0.97,
+                obstructions=[{"kind": "water_tank", "count": 1}],
             ),
             Project(
                 name="Sungai Petani Residential Cluster",
@@ -117,6 +230,11 @@ async def seed():
                 status="completed",
                 customer_email="orahome.mail+sptownship@gmail.com",
                 created_at=days_ago(120),
+                state="Kedah",
+                system_type="hybrid",
+                monthly_consumption_kwh=780,
+                tariff_category="domestic",
+                obstructions=[],
             ),
             Project(
                 name="Kuching Eco Park Solar Farm",
@@ -129,6 +247,14 @@ async def seed():
                 status="active",
                 customer_email="orahome.mail+sarawakgreen@gmail.com",
                 created_at=days_ago(25),
+                state="Sarawak",
+                system_type="on_grid",
+                monthly_consumption_kwh=3100,
+                tariff_category="commercial",
+                roof_tilt_deg=12,
+                roof_azimuth_deg=5,
+                shading_factor=0.95,
+                obstructions=[{"kind": "aircon_compressor", "count": 2}],
             ),
         ]
         db.add_all(projects)
@@ -137,6 +263,10 @@ async def seed():
         # contact_email uses +alias of the FieldBot mailbox (see backend/.env SMTP_USER) so
         # RFQs land in the same inbox you already control — no separate vendor accounts
         # needed. Replying to an RFQ from that same inbox simulates the vendor's response.
+        # ARD §9: bnef_tier/brands_carried/quote_currency are additive backfill on
+        # the existing 6 vendors — names/emails/rates/unit_price_myr unchanged.
+        # Exactly one Tier-2 vendor (Green Energy Supply) and one USD vendor
+        # (Borneo PowerTech, imported inverters) per the ARD spec.
         vendors = [
             Vendor(
                 company_name="YSP Solar Sdn Bhd",
@@ -145,6 +275,8 @@ async def seed():
                 on_time_rate=94.0,
                 unit_price_myr=320.00,
                 specialization="solar panels",
+                bnef_tier=1,
+                brands_carried=["Longi", "JA Solar"],
             ),
             Vendor(
                 company_name="Green Energy Supply",
@@ -153,6 +285,8 @@ async def seed():
                 on_time_rate=87.0,
                 unit_price_myr=300.00,
                 specialization="solar panels",
+                bnef_tier=2,
+                brands_carried=["SolarMax"],
             ),
             Vendor(
                 company_name="SunTech Materials",
@@ -161,6 +295,8 @@ async def seed():
                 on_time_rate=98.0,
                 unit_price_myr=340.00,
                 specialization="solar panels",
+                bnef_tier=1,
+                brands_carried=["Longi", "Trina Solar"],
             ),
             Vendor(
                 company_name="Apex Mounting Systems",
@@ -169,6 +305,7 @@ async def seed():
                 on_time_rate=91.0,
                 unit_price_myr=280.00,
                 specialization="mounting structures",
+                brands_carried=["Unirac", "IronRidge"],
             ),
             Vendor(
                 company_name="Borneo PowerTech",
@@ -177,6 +314,9 @@ async def seed():
                 on_time_rate=89.0,
                 unit_price_myr=360.00,
                 specialization="inverters & cabling",
+                bnef_tier=1,
+                brands_carried=["Huawei", "Sungrow"],
+                quote_currency="USD",
             ),
             Vendor(
                 company_name="Voltguard Electrical",
@@ -185,6 +325,7 @@ async def seed():
                 on_time_rate=96.0,
                 unit_price_myr=250.00,
                 specialization="electrical & balance-of-system",
+                brands_carried=["Schneider Electric", "ABB"],
             ),
         ]
         db.add_all(vendors)
@@ -294,8 +435,17 @@ async def seed():
         )
         db.add(session)
 
+        # --- ARD §9 / D4: components catalog from Agent A's vendored CEC CSVs. ---
+        modules = _load_components_from_csv(DATA_DIR / "cec_modules.csv", "module", _MODULE_FIELD_ALIASES)
+        inverters = _load_components_from_csv(DATA_DIR / "cec_inverters.csv", "inverter", _INVERTER_FIELD_ALIASES)
+        db.add_all(modules)
+        db.add_all(inverters)
+
         await db.commit()
-        print(f"Seeded {len(projects)} projects, {len(vendors)} vendors, {len(activity_entries)} activity events.")
+        print(
+            f"Seeded {len(projects)} projects, {len(vendors)} vendors, {len(activity_entries)} activity events, "
+            f"{len(modules)} modules, {len(inverters)} inverters."
+        )
 
 
 if __name__ == "__main__":

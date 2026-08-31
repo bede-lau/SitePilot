@@ -1,132 +1,139 @@
+import { Building2, Leaf, PanelsTopLeft, ShieldCheck, Wallet, Zap } from "lucide-react";
+import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
-import ActivityFeed from "../components/ActivityFeed";
-import BarChart from "../components/BarChart";
-import StatCard from "../components/StatCard";
-import { useActivityFeed } from "../hooks/useActivityFeed";
-import { api, formatMYR, type AnalyticsOverview } from "../lib/api";
-
-function isThisMonth(iso: string): boolean {
-  const d = new Date(iso);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-}
+import { AreaChart, Sparkline, type ChartTone } from "../components/charts";
+import { Card, CardBody, CardHeader, EmptyState, Skeleton, SkeletonStatCard } from "../components/ui";
+import { api, formatMYR } from "../lib/api";
+import { formatKwp, formatNumber, formatPct } from "../lib/format";
+import type { AnalyticsOverview, OverviewResponse } from "../lib/types";
 
 function monthLabel(key: string): string {
   const [year, month] = key.split("-").map(Number);
+  if (!year || !month) return key;
   return new Date(year, month - 1, 1).toLocaleDateString("en-MY", { month: "short", year: "2-digit" });
 }
 
+interface StatTileProps {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  trend?: number[];
+  tone?: ChartTone;
+}
+
+function StatTile({ icon: Icon, label, value, trend, tone = "chart-1" }: StatTileProps) {
+  return (
+    <Card elevation="sm">
+      <CardBody className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-start gap-1.5 text-subtle">
+            <Icon className="mt-px size-3.5 shrink-0" />
+            <p className="text-xs leading-tight">{label}</p>
+          </div>
+          <p className="mt-1.5 text-xl font-semibold tabular-nums text-text">{value}</p>
+        </div>
+        {trend && trend.length > 1 && (
+          <Sparkline data={trend} tone={tone} ariaLabel={`${label} trend`} width={64} height={28} className="hidden shrink-0 sm:block" />
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+/** Command Center — KPI rail, generation + spend trends, live activity feed, and project status
+ * (ARD §6.3). The docked chat panel lives in Layout, not here. */
 export default function Dashboard() {
-  const events = useActivityFeed();
+  const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
-  const [counts, setCounts] = useState({
-    activeProjects: 0,
-    inspectionsThisMonth: 0,
-    invoicesPending: 0,
-    posThisMonth: 0,
-  });
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.listProjects(), api.listInspections(), api.listInvoices(), api.listPurchaseOrders()]).then(
-      ([projects, inspections, invoices, pos]) => {
-        setCounts({
-          activeProjects: projects.filter((p) => p.status === "active").length,
-          inspectionsThisMonth: inspections.filter((i) => isThisMonth(i.created_at)).length,
-          invoicesPending: invoices.filter((i) => i.status !== "approved").length,
-          posThisMonth: pos.filter((p) => isThisMonth(p.created_at)).length,
-        });
-      },
-    );
-    api.getAnalytics().then(setAnalytics);
+    Promise.allSettled([api.getOverview(), api.getAnalytics()]).then(([ov, an]) => {
+      if (ov.status === "fulfilled") setOverview(ov.value);
+      else setFailed(true);
+      if (an.status === "fulfilled") setAnalytics(an.value);
+      setLoading(false);
+    });
   }, []);
 
-  useEffect(() => {
-    const latest = events[0];
-    if (!latest) return;
-    setCounts((prev) => {
-      switch (latest.event_type) {
-        case "inspection_created":
-          return { ...prev, inspectionsThisMonth: prev.inspectionsThisMonth + 1 };
-        case "invoice_created":
-          return { ...prev, invoicesPending: prev.invoicesPending + 1 };
-        case "po_created":
-          return { ...prev, posThisMonth: prev.posThisMonth + 1 };
-        default:
-          return prev;
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events.length]);
-
-  const budgetUsedPct = analytics && analytics.total_contract_value
-    ? Math.round((analytics.total_spend / analytics.total_contract_value) * 100)
-    : 0;
+  const generationTrend = overview?.generation_trend ?? [];
+  const spendTrend = overview?.spend_trend ?? [];
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold text-gray-900">FieldBot Operations Portal</h1>
-      <p className="mt-1 text-sm text-gray-500">Real-time view across all active solar projects.</p>
-
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Active Projects" value={counts.activeProjects} />
-        <StatCard label="Inspections This Month" value={counts.inspectionsThisMonth} />
-        <StatCard label="Invoices Pending" value={counts.invoicesPending} />
-        <StatCard label="POs This Month" value={counts.posThisMonth} />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-text">Command Center</h1>
+        <p className="mt-1 text-sm text-muted">Real-time view across every active solar project.</p>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-gray-900">Budget Burn by Project</h2>
-            {analytics && (
-              <span className="text-sm text-gray-500">
-                {formatMYR(analytics.total_spend)} / {formatMYR(analytics.total_contract_value)} ({budgetUsedPct}%)
-              </span>
+      {loading ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <SkeletonStatCard key={i} />
+          ))}
+        </div>
+      ) : failed ? (
+        <EmptyState title="Couldn't load the overview" body="The backend may not be running. Data will appear once it's reachable." />
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6">
+          <StatTile icon={Zap} label="Total capacity" value={formatKwp(overview?.total_capacity_kwp ?? null)} trend={generationTrend.map((p) => p.value)} tone="chart-1" />
+          <StatTile icon={Building2} label="Active projects" value={formatNumber(overview?.active_projects ?? null)} tone="chart-2" />
+          <StatTile icon={ShieldCheck} label="Avg. confidence" value={formatPct(overview?.avg_confidence ?? null)} tone="chart-3" />
+          <StatTile icon={Wallet} label="PO value" value={formatMYR(overview?.po_value_myr ?? null)} trend={spendTrend.map((p) => p.value)} tone="chart-4" />
+          <StatTile icon={PanelsTopLeft} label="Panels installed" value={formatNumber(overview?.panels_installed ?? null)} tone="chart-2" />
+          <StatTile icon={Leaf} label="CO₂ avoided" value={`${formatNumber(overview?.co2_avoided_tonnes ?? null, { decimals: 1 })} t`} tone="chart-3" />
+        </div>
+      )}
+
+      <Card elevation="sm">
+        <CardHeader>
+          <p className="text-sm font-semibold text-text">Generation trend</p>
+          <span className="text-xs text-muted">kWh / month</span>
+        </CardHeader>
+        <CardBody>
+          {loading ? (
+            <Skeleton variant="rect" height={220} />
+          ) : (
+            <AreaChart
+              data={generationTrend.map((p) => ({ label: monthLabel(p.month), value: p.value }))}
+              tone="chart-1"
+              valueFormatter={(v) => `${formatNumber(v)} kWh`}
+              ariaLabel="Monthly generation trend"
+            />
+          )}
+        </CardBody>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card elevation="sm">
+          <CardHeader>
+            <p className="text-sm font-semibold text-text">Spend trend</p>
+            <span className="text-xs text-muted">RM / month</span>
+          </CardHeader>
+          <CardBody>
+            {loading ? (
+              <Skeleton variant="rect" height={200} />
+            ) : (
+              <AreaChart data={spendTrend.map((p) => ({ label: monthLabel(p.month), value: p.value }))} tone="chart-4" valueFormatter={(v) => formatMYR(v)} ariaLabel="Monthly spend trend" height={200} />
             )}
-          </div>
-          <div className="mt-4">
-            <BarChart
-              data={(analytics?.project_budgets ?? []).map((p) => ({ label: p.name, value: p.budget_used_pct }))}
-              formatValue={(v) => `${v.toFixed(0)}%`}
-              color="bg-blue-600"
-            />
-          </div>
-        </div>
+          </CardBody>
+        </Card>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-medium text-gray-900">Top Vendors by Spend</h2>
-          <div className="mt-4">
-            <BarChart
-              data={(analytics?.vendor_leaderboard ?? []).slice(0, 5).map((v) => ({ label: v.company_name, value: v.total_spend }))}
-              formatValue={(v) => formatMYR(v)}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
-          <h2 className="text-lg font-medium text-gray-900">Monthly Spend</h2>
-          <div className="mt-4">
-            <BarChart
-              data={(analytics?.spend_trend ?? []).map((s) => ({ label: monthLabel(s.month), value: s.amount }))}
-              formatValue={(v) => formatMYR(v)}
-              color="bg-purple-600"
-            />
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-medium text-gray-900">Quality Watch</h2>
-          <p className="mt-3 text-sm text-gray-500">Panels flagged with issues across all projects.</p>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">{analytics?.total_panels_with_issues ?? 0}</p>
-          <p className="mt-1 text-xs text-gray-400">From AI inspection reports site managers submitted via Telegram.</p>
-        </div>
-      </div>
-
-      <div className="mt-8">
-        <h2 className="text-lg font-medium text-gray-900 mb-3">Live Activity</h2>
-        <ActivityFeed events={events} />
+        <Card elevation="sm">
+          <CardHeader>
+            <p className="text-sm font-semibold text-text">Project status</p>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            {(analytics?.project_budgets ?? []).length === 0 && <p className="text-sm text-muted">No projects yet.</p>}
+            {(analytics?.project_budgets ?? []).map((p) => (
+              <div key={p.project_id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate text-text">{p.name}</span>
+                <span className="shrink-0 tabular-nums text-muted">{p.completion_pct}% built</span>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
       </div>
     </div>
   );
