@@ -16,6 +16,7 @@ import re
 import time
 from typing import AsyncIterator
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -29,6 +30,13 @@ logger = logging.getLogger("fieldbot.orchestrator")
 # confused model burn ~5 extra full-price round-trips before the non-tooled
 # fallback; 4 covers every genuine chain and caps the tail latency.
 MAX_TOOL_ROUNDS = 4
+# Hard wall-clock ceiling for one chat turn. Each LLM call can stall for the
+# client's per-request timeout; 4 tool rounds + a final call therefore stack
+# into multi-minute "Thinking…" hangs whenever DashScope is slow — the "2
+# minutes for a trivial question" bug. Past this budget we stop starting new
+# rounds and answer with whatever we already have. Typical turns finish in
+# ~1.5s and never come near it.
+TURN_DEADLINE_SECONDS = 45
 # How many past user/assistant turns to replay so follow-ups like "yes" keep
 # the question they're answering — tool calls themselves aren't replayed.
 MAX_HISTORY_TURNS = 6
@@ -38,6 +46,21 @@ MAX_REPLY_TOKENS = 512
 # Low temperature: this is a lookup/reporting bot, not creative writing — also
 # trims a little generation latency and variance.
 GEN_TEMPERATURE = 0.3
+# qwen3 "flash/plus" are hybrid reasoning models with chain-of-thought ON by
+# default — that CoT runs before every routing decision and every answer, and
+# measured ~5s vs ~0.7s for a trivial turn on this endpoint. This bot forces its
+# tools and only reports tool output, so the reasoning buys nothing. Disable it.
+# (DashScope OpenAI-compat reads this from extra_body; harmless on non-reasoning
+# models.)
+GEN_EXTRA_BODY = {"enable_thinking": False}
+
+
+def _round_timeout(remaining: float) -> httpx.Timeout:
+    """Per-call budget: the smaller of what's left in the turn and 30s overall,
+    with an 8s connect and a 20s read cap so a stream that dribbles to a near-stop
+    mid-answer errors out instead of holding the spinner for minutes."""
+    overall = min(30.0, max(5.0, remaining))
+    return httpx.Timeout(overall, connect=8.0, read=min(20.0, overall))
 
 
 def _tools_for_round(forced_choice: dict | None, round_index: int) -> list:
@@ -53,7 +76,17 @@ SYSTEM_PROMPT = (
     "You are FieldBot, a WhatsApp co-pilot for a solar installation site manager in Malaysia. "
     "You help with site projects, inspection reports, progress-claim invoices, vendors, "
     "purchase orders, and material procurement. You are talking over WhatsApp, so keep replies "
-    "short and skimmable — a few lines, plain text, light emoji only where it helps.\n\n"
+    "short and skimmable — a few lines, light emoji only where it helps.\n\n"
+    "FORMAT with plain GitHub-flavoured Markdown so the app renders it cleanly:\n"
+    "- Put each list item on its OWN line starting with '- ' (hyphen space). Never use the '•' "
+    "character and never string several items onto one line.\n"
+    "- Leave a blank line between a lead-in sentence and the list, and between paragraphs.\n"
+    "- Use '**bold**' sparingly for a key term; no headings, tables, or code fences in chat.\n\n"
+    "Good list reply:\n\n"
+    "I can help with:\n\n"
+    "- **Projects** — status, inspections, invoices\n"
+    "- **Vendors** — approved suppliers by region\n\n"
+    "What do you need?\n\n"
     "Use the tools to answer. Never invent project names, numbers, prices, or statuses — if a "
     "tool doesn't return it, say you don't have it. Money is in Malaysian Ringgit; format as "
     "'RM 12,000'.\n\n"
@@ -310,10 +343,10 @@ TOOLS = [
 ]
 
 CAPABILITY_REPLY = (
-    "Hi, I'm FieldBot — your site ops co-pilot. I can help with:\n"
-    "• Projects, inspections & progress claims\n"
-    "• Vendors & purchase orders\n"
-    "• Ordering materials (just tell me what and how many)\n\n"
+    "Hi, I'm FieldBot — your site ops co-pilot. I can help with:\n\n"
+    "- Projects, inspections & progress claims\n"
+    "- Vendors & purchase orders\n"
+    "- Ordering materials (just tell me what and how many)\n\n"
     "Send site photos for an inspection, or ask me something like "
     "\"show active projects\" or \"order 15 panels for Penang\"."
 )
@@ -423,19 +456,24 @@ async def run_orchestrator(
     # calculation (ARD §5.6). Telegram has no attachment concept, so quote-parse
     # forcing never triggers here.
     forced_choice = _forced_tool_choice(body)
+    start = time.monotonic()
 
     for round_index in range(MAX_TOOL_ROUNDS):
+        remaining = TURN_DEADLINE_SECONDS - (time.monotonic() - start)
+        if round_index > 0 and remaining <= 2:
+            break  # out of time budget — fall through to the salvage answer below
         if forced_choice and round_index == 0:
             tool_choice = forced_choice
         else:
             tool_choice = "auto"
-        response = await client.chat.completions.create(
+        response = await client.with_options(timeout=_round_timeout(remaining)).chat.completions.create(
             model=settings.llm_text_model,
             messages=messages,
             tools=_tools_for_round(forced_choice, round_index),
             tool_choice=tool_choice,
             max_tokens=MAX_REPLY_TOKENS,
             temperature=GEN_TEMPERATURE,
+            extra_body=GEN_EXTRA_BODY,
         )
         msg = response.choices[0].message
         if not msg.tool_calls:
@@ -489,11 +527,22 @@ async def run_orchestrator(
                 }
             )
 
-    # Ran out of tool rounds — ask the model for a final answer with what it has.
-    final = await client.chat.completions.create(
-        model=settings.llm_text_model, messages=messages, max_tokens=MAX_REPLY_TOKENS, temperature=GEN_TEMPERATURE
-    )
-    reply = (final.choices[0].message.content or CAPABILITY_REPLY).strip()
+    # Ran out of tool rounds (or the time budget) — ask for a final answer with
+    # what it has. Bounded by whatever is left of the turn deadline so this can't
+    # add another full-length stall on top of an already-slow turn.
+    left = max(5.0, TURN_DEADLINE_SECONDS - (time.monotonic() - start))
+    try:
+        final = await client.with_options(timeout=_round_timeout(left)).chat.completions.create(
+            model=settings.llm_text_model,
+            messages=messages,
+            max_tokens=MAX_REPLY_TOKENS,
+            temperature=GEN_TEMPERATURE,
+            extra_body=GEN_EXTRA_BODY,
+        )
+        reply = (final.choices[0].message.content or CAPABILITY_REPLY).strip()
+    except Exception:  # noqa: BLE001
+        logger.exception("final completion failed after tool rounds")
+        reply = CAPABILITY_REPLY
     await _save_turn(db, session, history, body, reply)
     return reply
 
@@ -570,12 +619,18 @@ async def run_orchestrator_stream(
         forced_choice = _forced_tool_choice(body, has_attachment=bool(attachments))
         all_cards: list[dict] = []
         final_text_parts: list[str] = []
+        start = time.monotonic()
+        deadline_hit = False
 
         yield {"type": "status", "label": "Thinking…", "phase": "reasoning"}
 
         for round_index in range(MAX_TOOL_ROUNDS):
+            remaining = TURN_DEADLINE_SECONDS - (time.monotonic() - start)
+            if round_index > 0 and remaining <= 2:
+                deadline_hit = True
+                break
             tool_choice = forced_choice if (forced_choice and round_index == 0) else "auto"
-            stream = await client.chat.completions.create(
+            stream = await client.with_options(timeout=_round_timeout(remaining)).chat.completions.create(
                 model=settings.llm_text_model,
                 messages=messages,
                 tools=_tools_for_round(forced_choice, round_index),
@@ -583,6 +638,7 @@ async def run_orchestrator_stream(
                 stream=True,
                 max_tokens=MAX_REPLY_TOKENS,
                 temperature=GEN_TEMPERATURE,
+                extra_body=GEN_EXTRA_BODY,
             )
 
             content_parts: list[str] = []
@@ -656,15 +712,28 @@ async def run_orchestrator_stream(
                     yield {"type": "warning", "level": "warn", "message": data["error"]}
 
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(data, default=str)})
-        else:
-            # Ran out of tool rounds — ask for one last non-tooled completion.
-            final = await client.chat.completions.create(
-                model=settings.llm_text_model,
-                messages=messages,
-                max_tokens=MAX_REPLY_TOKENS,
-                temperature=GEN_TEMPERATURE,
-            )
-            reply = (final.choices[0].message.content or CAPABILITY_REPLY).strip()
+
+        if not final_text_parts:
+            # Exhausted the tool rounds or hit the time budget without a plain-text
+            # answer — ask for one last non-tooled completion, bounded by whatever
+            # is left of the deadline so it can't tack on another long stall.
+            left = max(5.0, TURN_DEADLINE_SECONDS - (time.monotonic() - start))
+            try:
+                final = await client.with_options(timeout=_round_timeout(left)).chat.completions.create(
+                    model=settings.llm_text_model,
+                    messages=messages,
+                    max_tokens=MAX_REPLY_TOKENS,
+                    temperature=GEN_TEMPERATURE,
+                    extra_body=GEN_EXTRA_BODY,
+                )
+                reply = (final.choices[0].message.content or CAPABILITY_REPLY).strip()
+            except Exception:  # noqa: BLE001
+                logger.exception("final stream completion failed (deadline_hit=%s)", deadline_hit)
+                reply = (
+                    "That took longer than expected on my side — please try again."
+                    if deadline_hit
+                    else CAPABILITY_REPLY
+                )
             yield {"type": "delta", "text": reply}
             final_text_parts.append(reply)
 

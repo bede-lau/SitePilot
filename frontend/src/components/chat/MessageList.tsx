@@ -4,6 +4,7 @@ import { cn } from "../../lib/cn";
 import { formatRelativeTime } from "../../lib/format";
 import { Button, SkeletonChatMessage } from "../ui";
 import { CardRenderer } from "../cards";
+import { LoadingState } from "./LoadingState";
 import { Markdown } from "./Markdown";
 import { StreamingText } from "./StreamingText";
 import { ToolTrace } from "./ToolTrace";
@@ -68,7 +69,11 @@ export function MessageList({ messages, loading, onRetry }: MessageListProps) {
                 <ToolTrace entries={message.toolTrace} />
               </div>}
 
-              {(message.content || message.streaming) && (
+              {!isUser && message.streaming && !message.content && message.toolTrace.length === 0 && (
+                <LoadingState label={message.statusLabel} />
+              )}
+
+              {message.content && (
                 <div
                   className={cn(
                     "max-w-[92%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed",

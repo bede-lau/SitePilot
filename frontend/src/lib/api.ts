@@ -28,7 +28,13 @@ import type {
   VoiceTranscribeResponse,
 } from "./types";
 
-export const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || "http://localhost:8000";
+// Use 127.0.0.1, NOT "localhost". On Windows, `localhost` resolves to ::1 (IPv6)
+// first; uvicorn binds IPv4 only, so the browser spends its full IPv6 connect
+// timeout (~2 min) on the dead ::1 address before falling back to 127.0.0.1 —
+// that was the "chat takes 2 minutes" hang (Telegram was unaffected because it
+// never touches localhost). Forcing IPv4 here removes the dual-stack race.
+export const API_BASE =
+  (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || "http://127.0.0.1:8000";
 
 // Re-exported for backward compatibility — every existing page imports these types from
 // "../lib/api" and must keep working unmodified. New code should prefer importing from

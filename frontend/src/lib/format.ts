@@ -45,9 +45,16 @@ export function formatYearRange(range: [number, number] | null | undefined): str
   return `${fmt(lo)}–${fmt(hi)} yrs`;
 }
 
+/** A timestamp with no `Z` / `±hh:mm` suffix is UTC from the backend (SQLite drops tzinfo).
+ * `new Date()` would otherwise read it as local time — the "8h ago" skew on fresh rows. */
+function parseServerTime(iso: string): number {
+  const hasZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasZone ? iso : `${iso}Z`).getTime();
+}
+
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return EM_DASH;
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const seconds = Math.floor((Date.now() - parseServerTime(iso)) / 1000);
   if (Number.isNaN(seconds)) return EM_DASH;
   if (seconds < 10) return "just now";
   if (seconds < 60) return `${seconds}s ago`;
@@ -57,7 +64,7 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(parseServerTime(iso)).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function formatNumber(value: number | null | undefined, opts: { decimals?: number } = {}): string {

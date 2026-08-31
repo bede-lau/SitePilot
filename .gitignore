@@ -22,8 +22,14 @@ backend/uploads/*
 !backend/uploads/quotes
 frontend/dist/
 
-# Local scratch — screenshots pasted into the coding session
+# Local scratch — screenshots pasted into the coding session, editor cruft,
+# stray runtime logs. Not part of the app.
 screenshots/
+.vscode/
+.idea/
+.DS_Store
+*.local
+backend.log
 
 # Generated deliverable exports — the .md specs in-repo are the source of truth
 *.docx

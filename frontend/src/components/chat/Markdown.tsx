@@ -2,11 +2,25 @@ import { Fragment, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 
 /**
- * Tiny Markdown renderer for assistant replies — covers the subset Fieldbot emits:
- * `**bold**`, `*italic*` / `_italic_`, `` `code` ``, `#`–`###` headings, `-`/`*` bullet lists,
- * `1.` ordered lists, `>` blockquotes, `---` rules, and blank-line-separated paragraphs.
- * Builds React nodes directly (no `dangerouslySetInnerHTML`), so input is never treated as HTML.
+ * Tiny Markdown renderer for assistant replies. Targets the CommonMark / GitHub-flavoured
+ * subset Fieldbot actually emits: `**bold**`, `*italic*` / `_italic_`, `` `code` ``, `#`–`###`
+ * headings, bullet lists, `1.` ordered lists, `>` blockquotes, `---` rules, and
+ * blank-line-separated paragraphs. Builds React nodes directly (no `dangerouslySetInnerHTML`),
+ * so input is never treated as HTML.
+ *
+ * Robustness beyond strict CommonMark, because the model doesn't always emit clean markdown:
+ *  - bullets may be `-`, `*`, or a Unicode bullet glyph (`•·‣∙●▪◦…`);
+ *  - several bullets sometimes arrive inline on ONE line (`• A • B • C`) instead of one per
+ *    line — we split those into a real list rather than rendering a run-on paragraph.
  */
+
+// Unicode bullet glyphs the model uses instead of `-`/`*`.
+const GLYPHS = "•·‣∙●▪◦⁃▫‧";
+// A bullet marker at the start of a line (after optional indent) — begins / strips a list item.
+const BULLET_LINE = new RegExp(`^\\s*[-*${GLYPHS}]\\s+`);
+// A bullet glyph used mid-line as a separator (`text • text • text`). Non-global:
+// `String.split` still splits on every occurrence, and we count via `split(...).length - 1`.
+const INLINE_BULLET = new RegExp(`\\s+[${GLYPHS}]\\s+`);
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   // Split on the inline tokens while keeping the delimiters.
@@ -80,14 +94,31 @@ function parseBlocks(src: string): Block[] {
       blocks.push({ kind: "heading", level: heading[1].length, text: heading[2] });
       continue;
     }
-    if (/^[-*]\s+/.test(trimmed)) {
+    if (BULLET_LINE.test(trimmed)) {
       flushPara();
       const items: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
+      while (i < lines.length && BULLET_LINE.test(lines[i])) {
+        // A bullet line that itself contains ` • ` separators holds several items.
+        const body = lines[i].replace(BULLET_LINE, "");
+        for (const part of body.split(INLINE_BULLET)) {
+          const t = part.trim();
+          if (t) items.push(t);
+        }
         i++;
       }
       i--;
+      blocks.push({ kind: "ul", items });
+      continue;
+    }
+    // No leading marker, but the line is really several bullet items strung together
+    // with ` • ` separators (`A • B • C`) — treat as a list rather than a run-on paragraph.
+    if (trimmed.split(INLINE_BULLET).length - 1 >= 2) {
+      flushPara();
+      const items = trimmed
+        .replace(BULLET_LINE, "")
+        .split(INLINE_BULLET)
+        .map((s) => s.trim())
+        .filter(Boolean);
       blocks.push({ kind: "ul", items });
       continue;
     }
@@ -135,9 +166,9 @@ export function Markdown({ text, className }: { text: string; className?: string
           }
           case "ul":
             return (
-              <ul key={bi} className="flex flex-col gap-1 pl-4">
+              <ul key={bi} className="list-disc space-y-1 pl-5 marker:text-subtle">
                 {block.items.map((it, ii) => (
-                  <li key={ii} className="list-disc marker:text-subtle">
+                  <li key={ii} className="pl-0.5">
                     {renderInline(it, `ul${bi}-${ii}`)}
                   </li>
                 ))}
@@ -145,9 +176,9 @@ export function Markdown({ text, className }: { text: string; className?: string
             );
           case "ol":
             return (
-              <ol key={bi} className="flex flex-col gap-1 pl-4">
+              <ol key={bi} className="list-decimal space-y-1 pl-5 marker:text-subtle">
                 {block.items.map((it, ii) => (
-                  <li key={ii} className="list-decimal marker:text-subtle">
+                  <li key={ii} className="pl-0.5">
                     {renderInline(it, `ol${bi}-${ii}`)}
                   </li>
                 ))}

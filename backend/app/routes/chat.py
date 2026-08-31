@@ -9,6 +9,7 @@ body generator actually runs, so a `Depends(get_db)` session would already be
 closed by the time run_orchestrator_stream tries to use it."""
 import json
 import logging
+from datetime import timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -52,7 +53,11 @@ async def get_history(session_key: str, db: AsyncSession = Depends(get_db)):
             "content": r.content,
             "cards": r.cards,
             "attachments": r.attachments,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
+            # SQLite hands back a naive datetime even though we store UTC — pin the zone
+            # so the browser doesn't reinterpret it as local time ("8h ago" on a fresh msg).
+            "created_at": (
+                r.created_at.replace(tzinfo=timezone.utc).isoformat() if r.created_at else None
+            ),
         }
         for r in rows
     ]

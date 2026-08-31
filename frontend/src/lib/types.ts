@@ -619,12 +619,14 @@ export interface ErrorEventPayload {
   message: string;
 }
 
+// The backend streams FLAT event objects — `{"type": "status", "label": ..., "phase": ...}` —
+// not `{type, data: {...}}`. Each variant is its payload plus a `type` discriminator.
 export type ChatStreamEvent =
-  | { type: "status"; data: StatusEventPayload }
-  | { type: "tool"; data: ToolEventPayload }
-  | { type: "tool_result"; data: ToolResultEventPayload }
-  | { type: "delta"; data: DeltaEventPayload }
-  | { type: "card"; data: CardEventPayload }
-  | { type: "warning"; data: WarningEventPayload }
-  | { type: "done"; data: DoneEventPayload }
-  | { type: "error"; data: ErrorEventPayload };
+  | ({ type: "status" } & StatusEventPayload)
+  | ({ type: "tool" } & ToolEventPayload)
+  | ({ type: "tool_result" } & ToolResultEventPayload)
+  | ({ type: "delta" } & DeltaEventPayload)
+  | ({ type: "card" } & CardEventPayload)
+  | ({ type: "warning" } & WarningEventPayload)
+  | ({ type: "done" } & DoneEventPayload)
+  | ({ type: "error" } & ErrorEventPayload);

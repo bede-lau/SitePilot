@@ -84,6 +84,11 @@ projects/vendors/components.
 cd backend
 venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
+uvicorn binds IPv4 loopback (`127.0.0.1`). The frontend therefore calls the API at
+`http://127.0.0.1:8000`, **not** `http://localhost:8000` — on Windows `localhost` resolves to IPv6
+`::1` first, and the browser burns its full (~2 min) IPv6 connect timeout on that dead address
+before falling back to IPv4. If you override the API base, keep it on `127.0.0.1`.
+
 `/docs` (Swagger UI) lists every route. On Windows, `uvicorn --reload` can get stuck mid-reload
 after rapid successive file edits (spawns its worker on the system Python instead of the venv's,
 then silently stops picking up changes) — if a route seems to be serving stale code after an edit,

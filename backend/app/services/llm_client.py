@@ -4,6 +4,7 @@ import logging
 import random
 import re
 
+import httpx
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -17,14 +18,17 @@ def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
         # DashScope's default (no timeout, 2 retries) means a single stalled request
-        # can hang the whole chat turn for minutes. Cap it: 45s/request, one retry,
-        # 10s to connect. A slow model is better surfaced as an error than an
-        # indefinite spinner.
+        # can hang the whole chat turn for minutes. Cap hard:
+        #   connect 8s · read 20s (also catches a stream that dribbles mid-answer) ·
+        #   30s overall · NO retries.
+        # A retry here just doubles the wait behind the "Thinking…" spinner — the
+        # orchestrator enforces its own turn deadline and the UI has a Retry button,
+        # so surfacing the error fast beats a silent second attempt.
         _client = AsyncOpenAI(
             api_key=settings.llm_api_key,
             base_url=settings.llm_base_url or None,
-            timeout=45.0,
-            max_retries=1,
+            timeout=httpx.Timeout(30.0, connect=8.0, read=20.0),
+            max_retries=0,
         )
     return _client
 
@@ -142,6 +146,10 @@ async def _chat_json(prompt: str) -> dict:
     response = await _get_client().chat.completions.create(
         model=settings.llm_text_model,
         messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        # qwen3 flash/plus reason by default (~5s of hidden CoT per call). These
+        # are one-shot structured extractions — no reasoning needed.
+        extra_body={"enable_thinking": False},
     )
     text = response.choices[0].message.content or ""
     return _parse_json_response(text)

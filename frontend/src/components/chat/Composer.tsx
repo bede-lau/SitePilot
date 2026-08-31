@@ -28,7 +28,7 @@ export interface ComposerProps {
   placeholder?: string;
 }
 
-/** Multiline autosize composer — ⌘Enter/Ctrl+Enter to send, paste-to-upload, attachment pills, and
+/** Multiline autosize composer — Enter to send, ⌘/Ctrl+Enter (or Shift+Enter) for a newline, paste-to-upload, attachment pills, and
  * disabled state while a reply is streaming. File selection and the mic both funnel into the same
  * `onAddFiles` / `onTranscribed` callbacks the panel wires to the upload + voice pipelines. */
 export function Composer({
@@ -50,17 +50,51 @@ export function Composer({
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(128, Math.max(36, el.scrollHeight))}px`;
+
+    const resize = () => {
+      // Empty field: drop the inline height so the `h-9` class governs. Measuring
+      // scrollHeight here is unreliable while the docked rail is mid-width-animation
+      // (re-open / reload), which is what left the box "inflated".
+      if (!el.value) {
+        el.style.height = "";
+        return;
+      }
+      el.style.height = "auto";
+      el.style.height = `${Math.min(128, Math.max(36, el.scrollHeight))}px`;
+    };
+
+    resize();
+
+    // Recompute once the textarea's width actually settles (panel expand animation,
+    // viewport resize) — ignoring the height changes our own writes trigger.
+    let lastWidth = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return;
+      lastWidth = el.clientWidth;
+      resize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [value]);
 
   const canSend = !streaming && (value.trim().length > 0 || attachments.some((a) => a.status === "done"));
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      if (canSend) onSend();
+    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    // Ctrl/⌘+Enter (and Shift+Enter, above) inserts a newline at the caret;
+    // plain Enter sends.
+    if (e.metaKey || e.ctrlKey) {
+      const el = e.currentTarget;
+      const { selectionStart: s, selectionEnd: end } = el;
+      const next = value.slice(0, s) + "\n" + value.slice(end);
+      onChange(next);
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = s + 1;
+      });
+      return;
     }
+    if (canSend) onSend();
   }
 
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
@@ -148,7 +182,7 @@ export function Composer({
           />
         )}
       </div>
-      <p className="mt-1.5 pl-1 text-[10px] text-subtle">⌘Enter / Ctrl+Enter to send</p>
+      <p className="mt-1.5 pl-1 text-[10px] text-subtle">Enter to send · ⌘/Ctrl+Enter for a new line</p>
     </div>
   );
 }

@@ -163,6 +163,30 @@
   }
 }
 
+/* Chat pending-turn loader (components/chat/LoadingState.tsx). Kept as plain keyframes
+   rather than @theme animate-* tokens since they're driven by inline `animation` strings
+   with per-cell delays. The global prefers-reduced-motion rule freezes them. */
+@keyframes fb-pixel-on {
+  0%,
+  100% {
+    opacity: 0.14;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fb-shimmer-text {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 html,
 body {
   margin: 0;
