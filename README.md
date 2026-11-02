@@ -2,6 +2,16 @@
 <p align="center"><b>🥇 1st place · KrackedDevs Vibe-a-thon 2026</b></p>
 <p align="center"><b>From a field photo or supplier quote to an engineer-reviewed solar procurement workflow.</b></p>
 
+## ▍Project gallery
+
+<table><tr>
+<td width="50%"><img src="https://raw.githubusercontent.com/bede-lau/bede-lau.github.io/main/assets/img/sitepilot/sitepilot_1.png" alt="SitePilot project screenshot, first view" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/bede-lau/bede-lau.github.io/main/assets/img/sitepilot/sitepilot_2.png" alt="SitePilot project screenshot, second view" /></td>
+</tr></table>
+
+<sub>Images from the [project portfolio](https://bede-lau.github.io/); they may depict an earlier build.</sub>
+
+
 ## ▍System at a glance
 
 ```mermaid
