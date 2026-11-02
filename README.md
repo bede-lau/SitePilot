@@ -1,6 +1,8 @@
 <p align="center">
   <img src="frontend/public/favicon.svg" width="72" alt="SitePilot mark">
 </p>
+
+<p align="center"><strong>🥇 1st place · KrackedDevs Vibe-a-thon 2026</strong></p>
 <p align="center">
   <img src="frontend/public/images/fieldbot-project-cover.png" width="720" alt="Project cover: a field engineer photographing a solar array">
 </p>
