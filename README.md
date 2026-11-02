@@ -1,5 +1,5 @@
 <h1 align="center">SitePilot</h1>
-<p align="center"><b>🏆 Winner · KrackedDevs Vibe-a-thon 2026</b></p>
+<p align="center"><b>🥇 1st place · KrackedDevs Vibe-a-thon 2026</b></p>
 <p align="center"><b>From a field photo or supplier quote to an engineer-reviewed solar procurement workflow.</b></p>
 
 ## ▍System at a glance
