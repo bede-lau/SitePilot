@@ -28,6 +28,16 @@
 
 ---
 
+
+## ▍Project gallery
+
+<table><tr>
+<td width="50%"><img src="https://raw.githubusercontent.com/bede-lau/bede-lau.github.io/main/assets/img/sitepilot/sitepilot_1.png" alt="SitePilot project screenshot, first view" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/bede-lau/bede-lau.github.io/main/assets/img/sitepilot/sitepilot_2.png" alt="SitePilot project screenshot, second view" /></td>
+</tr></table>
+
+<sub>Images from the [project portfolio](https://bede-lau.github.io/); they may depict an earlier build.</sub>
+
 ## ▍The problem
 
 Hardware on a solar job is a catalog line. The delay is everything around it. Supplier quotes arrive as messy PDFs, in mixed units and currencies. Pairing a module with an inverter means redoing string voltage, MPPT window, and DC:AC by hand. A payback number for a Malaysian site has to sit on TNB Regulatory Period 4 blocks and the Solar ATAP export rate.
