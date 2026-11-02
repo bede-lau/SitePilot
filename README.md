@@ -1,4 +1,25 @@
-# SitePilot (FieldBot)
+<h1 align="center">SitePilot</h1>
+<p align="center"><b>🏆 Winner · KrackedDevs Vibe-a-thon 2026</b></p>
+<p align="center"><b>From a field photo or supplier quote to an engineer-reviewed solar procurement workflow.</b></p>
+
+## ▍System at a glance
+
+```mermaid
+flowchart LR
+ A["Telegram field input<br/>photo · text · voice"] --> B["Hybrid router"]
+ B --> C["Inspection handler"]
+ B --> D["Tool-calling orchestrator"]
+ D --> E["RFQ and quote workflow"]
+ E --> F{"Manager confirmation"}
+ F -->|yes| G["Purchase order"]
+ D --> H["Electrical compatibility<br/>and financial models"]
+ I["React dashboard"] --> D
+ E -. "when unconfigured" .-> J["Simulated quotes"]
+```
+
+Live email and messaging require configuration; the documented fallback paths are simulated. Engineering outputs are grounded in the repository's stated formulas and assumptions.
+
+---
 
 An agentic operating system for solar EPC contractors: a Telegram field interface for photo-based
 panel counts and voice notes, plus a React dashboard where a project manager runs the whole
